@@ -1,0 +1,75 @@
+# Compila el APK en los servidores de GitHub, que ya traen el SDK de Android.
+# No hace falta instalar nada en tu computadora.
+#
+# Para usarlo: subí este proyecto a un repositorio de GitHub. El APK queda en
+# la pestaña "Actions" → último run → "Artifacts" → mis-gastos-apk.
+
+name: Compilar APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:        # permite correrlo a mano desde la pestaña Actions
+
+permissions:
+  contents: write        # necesario para publicar el APK como Release
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'      # Capacitor 7 necesita Java 21
+
+      # v4 con los paquetes explícitos. El default de v3 incluía 'tools',
+      # un paquete que Google sacó del repositorio, y la acción moría ahí.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      # Sin esto, cada compilación firma el APK con una clave nueva y Android
+      # se niega a instalar la actualización encima de la anterior ("paquete en
+      # conflicto"), obligando a desinstalar y perder los datos. Guardando la
+      # clave entre compilaciones, las actualizaciones entran encima sin tocar
+      # nada. Ver la nota sobre la firma en LEEME-APK.md.
+      - name: Conservar la clave de firma
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: misgastos-debug-keystore-v1
+
+      - name: Instalar dependencias
+        run: npm ci || npm install
+
+      - name: Copiar la app web al proyecto Android
+        run: npx cap sync android
+
+      - name: Compilar
+        run: |
+          chmod +x android/gradlew
+          cd android && ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mis-gastos-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # Además del artifact (que se baja como .zip), publica un Release con el
+      # .apk suelto: desde el celular se toca el link y se instala directo.
+      - name: Publicar el APK para bajar del celular
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "build-${{ github.run_number }}" \
+            android/app/build/outputs/apk/debug/app-debug.apk \
+            --title "Mis Gastos — build ${{ github.run_number }}" \
+            --notes "APK de depuración. Abrilo desde el celular para instalar."

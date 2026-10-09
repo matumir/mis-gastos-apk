@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mis Gastos</title>
+<meta name="description" content="Registro de ingresos y egresos con carga por voz, categorías y resumen mensual.">
+<meta name="theme-color" content="#121311" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Mis Gastos">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <rect class="brand-tile" width="24" height="24" rx="5.2"/>
+      <path class="brand-barras" d="M5.71 18.29V14.59a1.6 1.6 0 0 1 3.19 0v3.7ZM10.40 18.29v-7a1.6 1.6 0 0 1 3.19 0v7ZM15.09 18.29V7.32a1.6 1.6 0 0 1 3.19 0v10.97Z"/>
+    </svg>
+    <h1 id="viewTitle">Resumen</h1>
+  </div>
+  <div class="topbar-acciones">
+  <button class="pill-pro" id="btnProHeader" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true" class="pill-pro-ico"><path d="M12 3l2.2 5.3 5.8.5-4.4 3.8 1.3 5.6L12 15.3 7.1 18.2l1.3-5.6L4 8.8l5.8-.5L12 3Z"/></svg>
+    Premium
+  </button>
+  <button class="icon-btn" id="btnAjustes" aria-label="Ajustes" title="Ajustes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 13.5a7.9 7.9 0 0 0 0-3l1.7-1.3-1.8-3.1-2 .8a7.7 7.7 0 0 0-2.6-1.5L14.4 3h-4.8l-.3 2.4a7.7 7.7 0 0 0-2.6 1.5l-2-.8L2.9 9.2l1.7 1.3a7.9 7.9 0 0 0 0 3L2.9 14.8l1.8 3.1 2-.8a7.7 7.7 0 0 0 2.6 1.5l.3 2.4h4.8l.3-2.4a7.7 7.7 0 0 0 2.6-1.5l2 .8 1.8-3.1-1.7-1.3Z"/></svg>
+  </button>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ===================== RESUMEN ===================== -->
+  <section class="view" id="view-resumen" aria-labelledby="viewTitle">
+
+    <div class="notice" id="avisoCopia" hidden>
+      <p class="notice-title">Guardá una copia de seguridad</p>
+      <p class="notice-text" id="avisoCopiaTexto">—</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="avisoCopiaOk">Guardar copia</button>
+        <button class="btn btn-ghost" id="avisoCopiaNo">Más tarde</button>
+      </div>
+    </div>
+
+    <div class="notice is-urgente" id="avisoPresu" hidden>
+      <p class="notice-title" id="avisoPresuTitulo">—</p>
+      <p class="notice-text" id="avisoPresuTexto">—</p>
+    </div>
+
+    <div class="notice" id="avisoFijos" hidden>
+      <p class="notice-title">Se cargaron tus movimientos fijos</p>
+      <p class="notice-text" id="avisoFijosTexto">—</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="avisoFijosOk">Entendido</button>
+      </div>
+    </div>
+
+    <div class="monthbar" role="group" aria-label="Mes a mostrar">
+      <button class="icon-btn" id="mesPrev" aria-label="Mes anterior">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="monthbar-label" id="mesLabel" aria-live="polite">—</button>
+      <button class="icon-btn" id="mesNext" aria-label="Mes siguiente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <div class="card hero-card">
+      <p class="hero-label">Balance del mes</p>
+      <p class="hero-figure" id="heroBalance">$0</p>
+      <p class="hero-note" id="heroNota"></p>
+    </div>
+
+    <div class="kpi-row">
+      <div class="card kpi">
+        <p class="kpi-label"><span class="key key-in" aria-hidden="true"></span>Ingresos</p>
+        <p class="kpi-value" id="kpiIngresos">$0</p>
+        <p class="kpi-delta" id="kpiIngresosDelta"></p>
+      </div>
+      <div class="card kpi">
+        <p class="kpi-label"><span class="key key-out" aria-hidden="true"></span>Egresos</p>
+        <p class="kpi-value" id="kpiEgresos">$0</p>
+        <p class="kpi-delta" id="kpiEgresosDelta"></p>
+      </div>
+    </div>
+
+    <div class="card" id="cardAhorro" hidden>
+      <div class="card-head card-head-tight">
+        <h2>Ahorro</h2>
+      </div>
+      <p class="ahorro-total" id="ahorroTotal">$0</p>
+      <p class="ahorro-sub" id="ahorroSub">—</p>
+      <div class="cajamini-list" id="ahorroCajas"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Egresos por categoría</h2>
+        <p class="card-sub" id="catChartSub">—</p>
+      </div>
+      <div id="catChart" class="catchart"></div>
+    </div>
+
+    <div class="card" id="cardPresu" hidden>
+      <div class="card-head">
+        <h2>Presupuestos</h2>
+        <p class="card-sub" id="presuSub">—</p>
+      </div>
+      <div id="listaPresu"></div>
+    </div>
+
+    <button class="acceso" id="accesoComp">
+      <span class="acceso-ico" aria-hidden="true">📊</span>
+      <span class="acceso-txt">
+        <span class="acceso-name">Comparar con meses anteriores</span>
+        <span class="acceso-sub">En qué se te fue la plata este mes</span>
+        <span class="sello-pro" hidden></span>
+      </span>
+      <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Mes a mes</h2>
+        <p class="card-sub">Últimos 6 meses</p>
+      </div>
+      <div class="legend" id="mesLegend">
+        <span class="legend-item"><span class="key key-in" aria-hidden="true"></span>Ingresos</span>
+        <span class="legend-item"><span class="key key-out" aria-hidden="true"></span>Egresos</span>
+      </div>
+      <div id="mesChart" class="meschart"></div>
+      <div class="seg" role="group" aria-label="Forma de ver los datos">
+        <button class="seg-btn is-on" data-vista="grafico">Gráfico</button>
+        <button class="seg-btn" data-vista="tabla">Tabla</button>
+      </div>
+      <div id="mesTabla" class="tablewrap" hidden></div>
+    </div>
+
+    <div class="procard" id="proCard" hidden>
+      <p class="procard-eyebrow">Mis Gastos Premium</p>
+      <p class="procard-title">Programá lo que se repite todos los meses</p>
+      <p class="procard-text">El alquiler, el sueldo y las cuotas se cargan solos. Más categorías y cajas de ahorro sin límite. Se paga una sola vez.</p>
+      <button class="btn btn-pro btn-block" id="btnProCard">Ver qué incluye</button>
+    </div>
+
+  </section>
+
+  <!-- ===================== MOVIMIENTOS ===================== -->
+  <section class="view" id="view-movimientos" hidden>
+    <div class="monthbar" role="group" aria-label="Mes a mostrar">
+      <button class="icon-btn" id="mesPrev2" aria-label="Mes anterior">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="monthbar-label" id="mesLabel2" aria-live="polite">—</button>
+      <button class="icon-btn" id="mesNext2" aria-label="Mes siguiente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <div class="searchwrap">
+      <svg class="searchicon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input type="search" id="buscar" placeholder="Buscar por descripción o categoría" aria-label="Buscar movimientos">
+    </div>
+
+    <button class="acceso" id="accesoFijos">
+      <span class="acceso-ico" aria-hidden="true">🔁</span>
+      <span class="acceso-txt">
+        <span class="acceso-name">Movimientos fijos</span>
+        <span class="acceso-sub" id="accesoFijosSub">—</span>
+        <span class="sello-pro" hidden></span>
+      </span>
+      <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <button class="acceso" id="accesoFiltros">
+      <span class="acceso-ico" aria-hidden="true">🔎</span>
+      <span class="acceso-txt">
+        <span class="acceso-name">Filtros</span>
+        <span class="acceso-sub" id="accesoFiltrosSub">—</span>
+        <span class="sello-pro" hidden></span>
+      </span>
+      <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div class="chipbar" role="group" aria-label="Filtrar por tipo">
+      <button class="chip is-on" data-filtro="todos">Todos</button>
+      <button class="chip" data-filtro="egreso">Egresos</button>
+      <button class="chip" data-filtro="ingreso">Ingresos</button>
+      <button class="chip" data-filtro="ahorro">Ahorro</button>
+    </div>
+
+    <div class="filtros-resumen" id="resumenFiltros" hidden>
+      <span id="resumenFiltrosTexto">—</span>
+      <button class="filtros-quitar" id="btnQuitarFiltros">Quitar filtros</button>
+    </div>
+
+    <div id="listaMov"></div>
+  </section>
+
+  <!-- ===================== AHORROS ===================== -->
+  <section class="view" id="view-ahorros" hidden>
+    <div class="card hero-card">
+      <p class="hero-label">Tenés ahorrado</p>
+      <p class="hero-figure" id="ahorroHero">$0</p>
+      <p class="hero-note" id="ahorroHeroNota"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h2>Cómo viene creciendo</h2>
+        <p class="card-sub">Saldo al cierre de cada mes</p>
+      </div>
+      <div id="ahorroChart" class="ahorrochart"></div>
+    </div>
+
+    <div id="listaCajas"></div>
+    <p class="cupo-linea" id="cupoCajas" hidden>—</p>
+    <button class="btn btn-ghost btn-block" id="btnNuevaCaja">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-ico"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Nueva caja de ahorro
+    </button>
+  </section>
+
+  <!-- ===================== CATEGORÍAS ===================== -->
+  <section class="view" id="view-categorias" hidden>
+    <div class="chipbar" role="group" aria-label="Tipo de categoría">
+      <button class="chip is-on" data-cattipo="egreso">De egresos</button>
+      <button class="chip" data-cattipo="ingreso">De ingresos</button>
+    </div>
+    <div id="listaCat"></div>
+    <p class="cupo-linea" id="cupoCat" hidden>—</p>
+    <button class="btn btn-ghost btn-block" id="btnNuevaCat">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-ico"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Nueva categoría
+    </button>
+  </section>
+
+</main>
+
+<!-- ===================== BOTONES DE ALTA ===================== -->
+<div class="fabs">
+  <button class="fab fab-mic" id="fabVoz" aria-label="Cargar por voz">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Voz</span>
+  </button>
+  <button class="fab fab-add" id="fabAdd" aria-label="Cargar a mano">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<!-- ===================== NAV ===================== -->
+<nav class="bottomnav" aria-label="Secciones">
+  <button class="nav-btn is-on" data-view="resumen">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V10m5 9V5m5 14v-6m5 6V8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Resumen</span>
+  </button>
+  <button class="nav-btn" data-view="movimientos">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Movimientos</span>
+  </button>
+  <button class="nav-btn" data-view="ahorros">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 18.5v1.6M17 18.5v1.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Ahorros</span>
+  </button>
+  <button class="nav-btn" data-view="categorias">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 4.5h6v6h-6zM13.5 4.5h6v6h-6zM4.5 13.5h6v6h-6zM13.5 13.5h6v6h-6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+    <span>Categorías</span>
+  </button>
+</nav>
+
+<!-- ===================== HOJA: MOVIMIENTO ===================== -->
+<div class="sheet-backdrop" id="sheetMovBack" hidden></div>
+<section class="sheet" id="sheetMov" hidden aria-modal="true" role="dialog" aria-labelledby="sheetMovTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetMovTitle">Nuevo movimiento</h2>
+    <button class="icon-btn" id="sheetMovClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+
+    <p class="voice-echo" id="voiceEcho" hidden></p>
+
+    <div class="seg seg-type" role="group" aria-label="Tipo de movimiento">
+      <button class="seg-btn is-on" id="tipoEgreso" data-tipo="egreso">Egreso</button>
+      <button class="seg-btn" id="tipoIngreso" data-tipo="ingreso">Ingreso</button>
+      <button class="seg-btn" id="tipoAhorro" data-tipo="ahorro">Ahorro</button>
+    </div>
+
+    <div class="seg seg-sentido" id="segSentido" hidden role="group" aria-label="Qué hacer con la plata">
+      <button class="seg-btn is-on" id="sentidoAporte" data-sentido="aporte">Guardar plata</button>
+      <button class="seg-btn" id="sentidoRetiro" data-sentido="retiro">Sacar plata</button>
+    </div>
+
+    <label class="field amount-field">
+      <span class="field-label">Monto</span>
+      <div class="amount-input">
+        <span class="amount-cur" aria-hidden="true">$</span>
+        <input type="text" id="fMonto" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Monto">
+      </div>
+    </label>
+
+    <p class="field-hint" id="fTope" hidden></p>
+
+    <div class="field">
+      <span class="field-label" id="lblCategoria">Categoría</span>
+      <div class="catpick" id="fCategoria"></div>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Descripción <span class="opt">(opcional)</span></span>
+      <input type="text" id="fDesc" autocomplete="off" placeholder="Ej.: nafta de la camioneta">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Fecha</span>
+      <input type="date" id="fFecha">
+    </label>
+
+    <p class="form-error" id="fError" hidden></p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-danger-ghost" id="btnBorrarMov" hidden>Eliminar</button>
+      <button class="btn btn-primary btn-grow" id="btnGuardarMov">Guardar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: VOZ ===================== -->
+<div class="sheet-backdrop" id="sheetVozBack" hidden></div>
+<section class="sheet sheet-voice" id="sheetVoz" hidden aria-modal="true" role="dialog" aria-labelledby="sheetVozTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetVozTitle">Cargar por voz</h2>
+    <button class="icon-btn" id="sheetVozClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body voice-body">
+    <div class="mic-stage">
+      <button class="mic-big" id="micBig" aria-label="Empezar a grabar">
+        <span class="mic-pulse" aria-hidden="true"></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <p class="mic-state" id="micEstado">Tocá el micrófono y decí el movimiento.</p>
+    <p class="mic-transcript" id="micTexto"></p>
+    <div class="examples" id="micEjemplos">
+      <p class="examples-title">Ejemplos que entiende</p>
+      <ul>
+        <li>«Gasté 25 mil en nafta»</li>
+        <li>«Pagué la luz 48.500»</li>
+        <li>«Cobré el sueldo, 900 lucas»</li>
+        <li>«Compré mercadería por 150 mil ayer»</li>
+        <li>«Guardé 100 mil para vacaciones»</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: CATEGORÍA ===================== -->
+<div class="sheet-backdrop" id="sheetCatBack" hidden></div>
+<section class="sheet" id="sheetCat" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCatTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetCatTitle">Nueva categoría</h2>
+    <button class="icon-btn" id="sheetCatClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="catform-top">
+      <div class="emoji-preview" id="catEmojiPreview">🏷️</div>
+      <label class="field field-grow">
+        <span class="field-label">Nombre</span>
+        <input type="text" id="catNombre" autocomplete="off" placeholder="Ej.: Combustible">
+      </label>
+    </div>
+
+    <div class="seg seg-type" role="group" aria-label="Tipo de categoría">
+      <button class="seg-btn is-on" id="catTipoEgreso" data-cattipo2="egreso">De egresos</button>
+      <button class="seg-btn" id="catTipoIngreso" data-cattipo2="ingreso">De ingresos</button>
+    </div>
+
+    <label class="field" id="filaPresupuesto" hidden>
+      <span class="field-label">Presupuesto mensual <span class="opt">(opcional)</span></span>
+      <span class="sello-pro" id="selloPresu" hidden></span>
+      <div class="amount-input">
+        <span class="amount-cur" aria-hidden="true">$</span>
+        <input type="text" id="catPresupuesto" inputmode="decimal" placeholder="Sin tope" autocomplete="off">
+      </div>
+      <p class="field-help">La app te avisa cuando te pasás. No bloquea nada.</p>
+    </label>
+
+    <button class="aviso-pro" id="presuPro" hidden>
+      <span class="aviso-pro-ico" aria-hidden="true">★</span>
+      <span>Poné un presupuesto mensual a esta categoría y que la app te avise al pasarte — <strong>Premium</strong></span>
+    </button>
+
+    <div class="field">
+      <span class="field-label">Emoji</span>
+      <input type="text" id="catEmojiInput" class="emoji-input" maxlength="8" autocomplete="off" placeholder="Pegá cualquier emoji">
+      <div class="emoji-grid" id="emojiGrid"></div>
+    </div>
+
+    <p class="form-error" id="catError" hidden></p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-danger-ghost" id="btnBorrarCat" hidden>Eliminar</button>
+      <button class="btn btn-primary btn-grow" id="btnGuardarCat">Guardar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: CAJA DE AHORRO ===================== -->
+<div class="sheet-backdrop" id="sheetCajaBack" hidden></div>
+<section class="sheet" id="sheetCaja" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCajaTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetCajaTitle">Nueva caja</h2>
+    <button class="icon-btn" id="sheetCajaClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+
+    <div class="caja-saldo" id="cajaSaldoBox" hidden>
+      <p class="caja-saldo-label">Saldo de la caja</p>
+      <p class="caja-saldo-val" id="cajaSaldo">$0</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnCajaIngresar">Ingresar plata</button>
+        <button class="btn btn-ghost" id="btnCajaRetirar">Sacar plata</button>
+      </div>
+    </div>
+
+    <div class="field" id="cajaMovsBox" hidden>
+      <span class="field-label">Movimientos de esta caja</span>
+      <div id="cajaMovs"></div>
+    </div>
+
+    <div class="catform-top">
+      <div class="emoji-preview" id="cajaEmojiPreview">🏦</div>
+      <label class="field field-grow">
+        <span class="field-label">Nombre</span>
+        <input type="text" id="cajaNombre" autocomplete="off" placeholder="Ej.: Fondo de emergencia">
+      </label>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Emoji</span>
+      <input type="text" id="cajaEmojiInput" class="emoji-input" maxlength="8" autocomplete="off" placeholder="Pegá cualquier emoji">
+      <div class="emoji-grid" id="cajaEmojiGrid"></div>
+    </div>
+
+    <p class="form-error" id="cajaError" hidden></p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-danger-ghost" id="btnBorrarCaja" hidden>Eliminar</button>
+      <button class="btn btn-primary btn-grow" id="btnGuardarCaja">Guardar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: AJUSTES ===================== -->
+<div class="sheet-backdrop" id="sheetSetBack" hidden></div>
+<section class="sheet" id="sheetSet" hidden aria-modal="true" role="dialog" aria-labelledby="sheetSetTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetSetTitle">Ajustes</h2>
+    <button class="icon-btn" id="sheetSetClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="field">
+      <span class="field-label">Tema</span>
+      <div class="seg" role="group" aria-label="Tema">
+        <button class="seg-btn" data-tema="auto">Automático</button>
+        <button class="seg-btn" data-tema="light">Claro</button>
+        <button class="seg-btn" data-tema="dark">Oscuro</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Plan</span>
+      <div class="plan-linea">
+        <span class="plan-nombre" id="planNombre">—</span>
+        <span class="plan-chip" id="planChip" hidden>—</span>
+      </div>
+      <p class="field-help" id="planDetalle">—</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnActivarLic">Activar licencia</button>
+        <button class="btn btn-danger-ghost" id="btnQuitarLic" hidden>Quitar</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Copia de seguridad</span>
+      <p class="field-help" id="copiaEstado">—</p>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnExportar">Guardar copia</button>
+        <button class="btn btn-ghost" id="btnImportar">Importar</button>
+      </div>
+      <p class="field-help">Sirve para cambiar de teléfono y para no perder nada si se borran los datos del navegador.</p>
+      <input type="file" id="fileImportar" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Datos</span>
+      <p class="field-help" id="statsLinea">—</p>
+      <button class="btn btn-danger-ghost" id="btnBorrarTodo">Borrar todos los datos</button>
+    </div>
+
+    <p class="appver" id="appVer">Mis Gastos</p>
+  </div>
+</section>
+
+<!-- ===================== HOJA: COPIA COMO TEXTO ===================== -->
+<div class="sheet-backdrop" id="sheetCopiaBack" hidden></div>
+<section class="sheet" id="sheetCopia" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCopiaTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetCopiaTitle">Copia de seguridad</h2>
+    <button class="icon-btn" id="sheetCopiaClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help" id="copiaAyuda">—</p>
+    <textarea id="copiaTexto" class="copia-texto" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Contenido de la copia"></textarea>
+    <div class="sheet-actions">
+      <button class="btn btn-primary btn-grow" id="btnCopiaCopiar">Copiar el texto</button>
+      <button class="btn btn-primary btn-grow" id="btnCopiaUsar" hidden>Importar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: FILTROS ===================== -->
+<div class="sheet-backdrop" id="sheetFiltrosBack" hidden></div>
+<section class="sheet" id="sheetFiltros" hidden aria-modal="true" role="dialog" aria-labelledby="sheetFiltrosTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetFiltrosTitle">Filtros</h2>
+    <button class="icon-btn" id="sheetFiltrosClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="field">
+      <span class="field-label">Período</span>
+      <div class="catpick">
+        <button type="button" class="catchip is-on" data-periodo="0">Este mes</button>
+        <button type="button" class="catchip" data-periodo="3">3 meses</button>
+        <button type="button" class="catchip" data-periodo="6">6 meses</button>
+        <button type="button" class="catchip" data-periodo="12">1 año</button>
+        <button type="button" class="catchip" data-periodo="-1">Todo</button>
+      </div>
+      <p class="field-help">Cuenta hacia atrás desde el mes que estás viendo.</p>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Categorías <span class="opt">(todas si no elegís ninguna)</span></span>
+      <div class="catpick" id="filtroCats"></div>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Monto</span>
+      <div class="rango">
+        <div class="amount-input">
+          <span class="amount-cur" aria-hidden="true">$</span>
+          <input type="text" id="filtroMin" inputmode="decimal" placeholder="Desde" autocomplete="off" aria-label="Monto mínimo">
+        </div>
+        <div class="amount-input">
+          <span class="amount-cur" aria-hidden="true">$</span>
+          <input type="text" id="filtroMax" inputmode="decimal" placeholder="Hasta" autocomplete="off" aria-label="Monto máximo">
+        </div>
+      </div>
+    </div>
+
+    <p class="form-error" id="filtroError" hidden>—</p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-primary btn-grow" id="btnAplicarFiltros">Aplicar</button>
+      <button class="btn btn-ghost" id="btnLimpiarFiltros">Limpiar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: COMPARAR ===================== -->
+<div class="sheet-backdrop" id="sheetCompBack" hidden></div>
+<section class="sheet" id="sheetComp" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCompTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetCompTitle">Comparar</h2>
+    <button class="icon-btn" id="sheetCompClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help">Egresos de <strong id="compMes">—</strong> contra:</p>
+    <div class="seg" role="group" aria-label="Período de comparación">
+      <button class="seg-btn is-on" data-modocomp="anterior">Mes anterior</button>
+      <button class="seg-btn" data-modocomp="tres">3 meses</button>
+      <button class="seg-btn" data-modocomp="seis">6 meses</button>
+    </div>
+
+    <div class="comp-resumen" id="compResumen" hidden>
+      <div class="comp-dif-fila">
+        <span class="comp-dif" id="compDif">—</span>
+        <span class="comp-dif-pct" id="compDifPct"></span>
+      </div>
+      <p class="comp-detalle" id="compDetalle">—</p>
+    </div>
+
+    <div id="listaComp"></div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: LISTA DE FIJOS ===================== -->
+<div class="sheet-backdrop" id="sheetFijosBack" hidden></div>
+<section class="sheet" id="sheetFijos" hidden aria-modal="true" role="dialog" aria-labelledby="sheetFijosTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetFijosTitle">Movimientos fijos</h2>
+    <button class="icon-btn" id="sheetFijosClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help">Lo que se repite todos los meses: el alquiler, el sueldo, la cuota del gimnasio. Se cargan solos el día que corresponde.</p>
+    <div id="listaFijos"></div>
+    <button class="btn btn-ghost btn-block" id="btnNuevoFijo">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-ico"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Nuevo movimiento fijo
+    </button>
+  </div>
+</section>
+
+<!-- ===================== HOJA: UN FIJO ===================== -->
+<div class="sheet-backdrop" id="sheetFijoBack" hidden></div>
+<section class="sheet" id="sheetFijo" hidden aria-modal="true" role="dialog" aria-labelledby="sheetFijoTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetFijoTitle">Nuevo movimiento fijo</h2>
+    <button class="icon-btn" id="sheetFijoClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="field">
+      <span class="field-label">Tipo</span>
+      <div class="seg" role="group" aria-label="Tipo de movimiento fijo">
+        <button class="seg-btn is-on" data-fijotipo="egreso">Egreso</button>
+        <button class="seg-btn" data-fijotipo="ingreso">Ingreso</button>
+      </div>
+    </div>
+
+    <label class="field amount-field">
+      <span class="field-label">Monto</span>
+      <div class="amount-input">
+        <span class="amount-cur" aria-hidden="true">$</span>
+        <input type="text" id="fijoMonto" inputmode="decimal" placeholder="0" autocomplete="off">
+      </div>
+    </label>
+
+    <div class="field">
+      <span class="field-label">Categoría</span>
+      <div class="catpick" id="fijoCategoria"></div>
+    </div>
+
+    <label class="field">
+      <span class="field-label">Descripción <span class="opt">(opcional)</span></span>
+      <input type="text" id="fijoDesc" maxlength="80" placeholder="Alquiler, gimnasio, sueldo…" autocomplete="off">
+    </label>
+
+    <label class="field">
+      <span class="field-label">Día del mes</span>
+      <input type="number" id="fijoDia" min="1" max="31" step="1" inputmode="numeric" value="1">
+      <p class="field-help">Si ponés 31, en los meses más cortos se carga el último día.</p>
+    </label>
+
+    <label class="field check-row" id="filaFijoActivo" hidden>
+      <input type="checkbox" id="fijoActivo" checked>
+      <span class="field-label">Activo</span>
+    </label>
+
+    <p class="form-error" id="fijoError" hidden>—</p>
+
+    <div class="sheet-actions">
+      <button class="btn btn-primary btn-grow" id="btnGuardarFijo">Guardar</button>
+      <button class="btn btn-danger-ghost" id="btnBorrarFijo" hidden>Eliminar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOJA: PREMIUM ===================== -->
+<div class="sheet-backdrop" id="sheetProBack" hidden></div>
+<section class="sheet sheet-pro" id="sheetPro" hidden aria-modal="true" role="dialog" aria-labelledby="sheetProTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetProTitle">
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="pro-estrella"><path d="M12 3l2.2 5.3 5.8.5-4.4 3.8 1.3 5.6L12 15.3 7.1 18.2l1.3-5.6L4 8.8l5.8-.5L12 3Z"/></svg>
+      Mis Gastos Premium
+    </h2>
+    <button class="icon-btn" id="sheetProClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="pro-motivo" id="proMotivo">—</p>
+
+    <ul class="pro-lista">
+      <li><strong>Movimientos fijos</strong>: el alquiler, el sueldo y las cuotas se cargan solos todos los meses</li>
+      <li><strong>Presupuestos por categoría</strong>, con aviso cuando te pasás</li>
+      <li><strong>Comparar con meses anteriores</strong> y ver en qué se te fue la plata</li>
+      <li><strong>Buscar en todo el historial</strong>, por categoría, monto o período</li>
+      <li><strong>Categorías y cajas de ahorro ilimitadas</strong></li>
+      <li>Se paga <strong>una sola vez</strong>. No es una suscripción.</li>
+    </ul>
+
+    <p class="field-help">Lo que ya tenés cargado sigue funcionando igual, pagues o no: los movimientos, el resumen, la voz y la copia de seguridad son gratis y quedan gratis.</p>
+
+    <div class="sheet-actions">
+      <a class="btn btn-pro btn-grow" id="btnProComprar" href="#" target="_blank" rel="noopener" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="btn-ico btn-ico-wa"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.17c-.24.68-1.42 1.31-1.95 1.36-.52.05-1 .24-3.37-.7-2.84-1.12-4.63-4.02-4.77-4.2-.14-.19-1.14-1.51-1.14-2.89 0-1.37.72-2.05.97-2.33.26-.28.56-.35.75-.35h.54c.17 0 .41-.07.64.49.24.56.8 1.94.87 2.08.07.14.12.3.02.49-.09.19-.14.3-.28.47l-.42.48c-.14.14-.28.29-.12.57.16.28.71 1.17 1.52 1.9 1.05.93 1.93 1.22 2.21 1.36.28.14.44.12.6-.07.17-.19.7-.81.88-1.09.19-.28.37-.23.63-.14.26.09 1.64.77 1.92.91.28.14.47.21.54.33.07.11.07.65-.17 1.33Z"/></svg>
+        Escribinos por WhatsApp
+      </a>
+      <button class="btn btn-ghost btn-grow" id="btnProTengo">Ya tengo mi código</button>
+    </div>
+
+    <p class="pro-contacto" id="proContacto" hidden>
+      O escribinos al <strong id="proContactoNum">—</strong>
+    </p>
+  </div>
+</section>
+
+<!-- ===================== HOJA: ACTIVAR LICENCIA ===================== -->
+<div class="sheet-backdrop" id="sheetLicBack" hidden></div>
+<section class="sheet" id="sheetLic" hidden aria-modal="true" role="dialog" aria-labelledby="sheetLicTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetLicTitle">Activar licencia</h2>
+    <button class="icon-btn" id="sheetLicClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help">Pegá acá el código que recibiste. Empieza con <strong>MG1.</strong> y es una sola línea larga.</p>
+    <textarea id="licTexto" class="copia-texto is-chica" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" aria-label="Código de la licencia" placeholder="MG1...."></textarea>
+    <p class="form-error" id="licError" hidden>—</p>
+    <div class="sheet-actions">
+      <button class="btn btn-primary btn-grow" id="btnLicActivar">Activar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DIÁLOGO (confirmar / avisar) ===================== -->
+<div class="dialog-backdrop" id="dlgBack" hidden></div>
+<div class="dialog" id="dlg" hidden role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <h2 class="dialog-title" id="dlgTitle">—</h2>
+  <div id="dlgTexto"></div>
+  <div class="dialog-actions" id="dlgActions"></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<!-- Puente de Capacitor: en el navegador no hace nada; en el APK habilita el micrófono nativo. -->
+<script src="capacitor.js"></script>
+<script src="speech-recognition.js"></script>
+<script src="filesystem.js"></script>
+<script src="share.js"></script>
+<script src="licencia.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

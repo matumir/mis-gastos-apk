@@ -1,0 +1,19 @@
+{
+  "name": "mis-gastos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Control de gastos con carga por voz",
+  "scripts": {
+    "sync": "cap sync android",
+    "apk": "cd android && ./gradlew assembleDebug",
+    "abrir": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/cli": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "appId": "com.misgastos.app",
+  "appName": "Mis Gastos",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#f1f1ed"
+  }
+}

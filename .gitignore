@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+
+# Lo que genera la compilación
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/capacitor-cordova-android-plugins/build/
+*.apk
+*.aab
