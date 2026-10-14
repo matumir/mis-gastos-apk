@@ -183,7 +183,7 @@ Con GitHub Actions es sólo hacer `git push`: el workflow sincroniza y compila s
 |---|---|
 | Nombre | Mis Gastos |
 | ID de aplicación | `com.misgastos.app` |
-| Versión de la app | 1.9 |
+| Versión de la app | BETA 2.0 |
 | Capacitor | 7.4.3 |
 | minSdk / targetSdk | 23 (Android 6) / 35 (Android 15) |
 | Java | 21 |

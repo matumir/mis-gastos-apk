@@ -1287,3 +1287,185 @@ a.btn { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   .acceso.es-pro, .pill-pro, .aviso-pro { animation: none; }
 }
+
+/* =========================================================
+   Metas de ahorro
+
+   Mismo lenguaje visual que los presupuestos, con una diferencia de
+   fondo: acá llenar la barra es bueno. Por eso al llegar se tiñe de
+   verde en vez de rojo.
+   ========================================================= */
+.meta-bloque { padding: 13px 0; border-bottom: 1px solid var(--hairline); }
+.meta-bloque:first-child { padding-top: 0; }
+.meta-bloque:last-of-type { border-bottom: 0; }
+.meta-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.meta-tit { font-size: 0.82rem; font-weight: 580; color: var(--ink-2); }
+.meta-pct { font-size: 0.8rem; font-weight: 620; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.meta-fill { height: 100%; border-radius: inherit; background: var(--series-ahorro); display: block; }
+.meta-pie { font-size: 0.76rem; color: var(--ink-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+.meta-bloque.is-lista .meta-fill { background: var(--good); }
+.meta-bloque.is-lista .meta-pct,
+.meta-bloque.is-lista .meta-pie { color: var(--good); font-weight: 560; }
+
+.meta-ritmo {
+  font-size: 0.78rem; color: var(--ink-2);
+  background: var(--wash); border-radius: var(--radius-in);
+  padding: 10px 12px; margin-top: 12px; line-height: 1.45;
+}
+
+/* filas de la tarjeta del Resumen */
+.meta-row {
+  display: block; width: 100%; text-align: left;
+  padding: 13px 0; border-bottom: 1px solid var(--hairline);
+}
+.meta-row:last-child { border-bottom: 0; }
+.meta-row:active { background: var(--wash); }
+.meta-row-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.meta-row-pie {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 6px; font-size: 0.76rem; color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+.meta-row-ritmo { flex: none; }
+.meta-row.is-lista .meta-fill { background: var(--good); }
+.meta-row.is-lista .meta-pct, .meta-row.is-lista .meta-row-pie { color: var(--good); }
+
+/* campo de monto en tamaño normal, igual que el del rango de filtros */
+.amount-chico { padding: 11px 13px; }
+.amount-chico .amount-cur { font-size: 0.95rem; }
+.field .amount-chico input[type="text"] { font-size: 0.95rem; font-weight: 500; letter-spacing: -0.01em; }
+
+/* =========================================================
+   Movimiento
+
+   Una sola curva y una sola escala de tiempos para toda la app. La
+   curva es la de las hojas de iOS: arranca rápido y frena largo, que es
+   lo que hace que algo se sienta físico en vez de programado.
+
+   Regla de la que no me muevo: la animación responde a algo que hizo la
+   persona y muestra qué cambió. Nada se mueve solo para decorar.
+   ========================================================= */
+:root {
+  --curva:      cubic-bezier(.32, .72, 0, 1);   /* entrar: frena largo */
+  --curva-sale: cubic-bezier(.4, 0, 1, 1);      /* salir: se va decidido */
+  --t-corto:  .16s;
+  --t-medio:  .22s;
+  --t-largo:  .34s;
+}
+
+/* ---- hojas ---- */
+.sheet { animation: hoja-entra var(--t-largo) var(--curva); }
+@keyframes hoja-entra {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.sheet.se-va {
+  animation: hoja-sale var(--t-medio) var(--curva-sale) forwards;
+  pointer-events: none;
+}
+@keyframes hoja-sale {
+  from { transform: translateY(0); }
+  to   { transform: translateY(100%); }
+}
+
+.sheet-backdrop { animation: fundido var(--t-medio) ease; }
+.sheet-backdrop.se-va,
+.dialog-backdrop.se-va { animation: fundido var(--t-medio) ease reverse forwards; }
+@keyframes fundido { from { opacity: 0 } to { opacity: 1 } }
+
+/* ---- diálogo ---- */
+.dialog { animation: dlg-entra var(--t-medio) var(--curva); }
+@keyframes dlg-entra {
+  from { transform: translateY(-50%) scale(.94); opacity: 0 }
+  to   { transform: translateY(-50%) scale(1);   opacity: 1 }
+}
+.dialog.se-va {
+  animation: dlg-sale var(--t-corto) var(--curva-sale) forwards;
+  pointer-events: none;
+}
+@keyframes dlg-sale {
+  from { transform: translateY(-50%) scale(1);   opacity: 1 }
+  to   { transform: translateY(-50%) scale(.96); opacity: 0 }
+}
+
+/* ---- toast ---- */
+.toast { animation: toast-entra var(--t-medio) var(--curva); }
+@keyframes toast-entra {
+  from { transform: translate(-50%, 14px); opacity: 0 }
+  to   { transform: translate(-50%, 0);    opacity: 1 }
+}
+.toast.se-va { animation: toast-sale var(--t-corto) var(--curva-sale) forwards; }
+@keyframes toast-sale {
+  from { transform: translate(-50%, 0);   opacity: 1 }
+  to   { transform: translate(-50%, 8px); opacity: 0 }
+}
+
+/* ---- cambio de pestaña ---- */
+.view.entra { animation: vista-entra var(--t-medio) var(--curva); }
+@keyframes vista-entra {
+  from { opacity: 0; transform: translateY(6px) }
+  to   { opacity: 1; transform: none }
+}
+
+/* ---- respuesta al toque ----
+   Lo que más se siente en un teléfono: que lo que tocás ceda un poco.
+   Es la diferencia entre tocar una imagen y tocar un botón. */
+.btn, .fab, .nav-btn, .catitem, .fijoitem, .acceso, .meta-row, .movrow,
+.catchip, .chip, .seg-btn, .icon-btn, .presurow, .comprow {
+  transition: transform var(--t-corto) var(--curva),
+              background-color var(--t-corto) ease,
+              opacity var(--t-corto) ease;
+}
+.btn:active, .fab:active, .catchip:active, .chip:active, .seg-btn:active { transform: scale(.96); }
+.catitem:active, .fijoitem:active, .acceso:active, .meta-row:active, .movrow:active { transform: scale(.985); }
+.icon-btn:active { transform: scale(.9); }
+
+/* ---- barras y números que cambian ---- */
+.catrow-fill, .presurow-fill, .meta-fill {
+  transition: width var(--t-largo) var(--curva), background-color var(--t-medio) ease;
+}
+.hero-figure, .kpi-value, .caja-saldo-val {
+  transition: color var(--t-medio) ease;
+}
+
+/* El número del balance acusa recibo cuando cambia de mes. */
+.hero-figure.cambia { animation: num-cambia var(--t-medio) var(--curva); }
+@keyframes num-cambia {
+  from { opacity: .35; transform: translateY(4px) }
+  to   { opacity: 1;   transform: none }
+}
+
+/* ---- listas ----
+   Las filas aparecen escalonadas sólo al cambiar de vista o de mes, que
+   es cuando la lista entera es nueva. No en cada repintado: eso sería
+   movimiento porque sí. */
+.view.entra .movrow,
+.view.entra .catitem,
+.view.entra .presurow,
+.view.entra .meta-row {
+  animation: fila-entra var(--t-medio) var(--curva) backwards;
+}
+.view.entra .movrow:nth-child(1), .view.entra .catitem:nth-child(1) { animation-delay: .02s }
+.view.entra .movrow:nth-child(2), .view.entra .catitem:nth-child(2) { animation-delay: .04s }
+.view.entra .movrow:nth-child(3), .view.entra .catitem:nth-child(3) { animation-delay: .06s }
+.view.entra .movrow:nth-child(4), .view.entra .catitem:nth-child(4) { animation-delay: .08s }
+.view.entra .movrow:nth-child(5), .view.entra .catitem:nth-child(5) { animation-delay: .10s }
+@keyframes fila-entra {
+  from { opacity: 0; transform: translateY(5px) }
+  to   { opacity: 1; transform: none }
+}
+
+/* ---- y todo apagado si el teléfono lo pide ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+/* Los dos campos de meta van dentro de un contenedor propio, así que
+   no heredan el espaciado de la hoja. */
+#cajaMetas { display: grid; gap: 18px; }
+#metaResumen { display: grid; }

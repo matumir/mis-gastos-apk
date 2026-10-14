@@ -46,6 +46,14 @@
          resuelve en el aparato y no hace falta. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Recordatorios. Desde Android 13 el permiso se pide además en
+         tiempo de ejecución; lo hace el plugin la primera vez. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Para que los recordatorios caigan a la hora puesta y no cuando el
+         sistema tenga ganas. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- Desde Android 11 una app sólo "ve" los servicios que declara. Sin esto,
          el reconocedor de voz del sistema es invisible para la app. -->
     <queries>

@@ -50,6 +50,15 @@
       </div>
     </div>
 
+    <div class="notice" id="avisoVersion" hidden>
+      <p class="notice-title">Hay una versión nueva</p>
+      <p class="notice-text" id="avisoVersionTexto">—</p>
+      <div class="btn-row">
+        <a class="btn btn-primary" id="avisoVersionOk" href="#" target="_blank" rel="noopener" hidden>Descargar</a>
+        <button class="btn btn-ghost" id="avisoVersionNo">Más tarde</button>
+      </div>
+    </div>
+
     <div class="notice is-urgente" id="avisoPresu" hidden>
       <p class="notice-title" id="avisoPresuTitulo">—</p>
       <p class="notice-text" id="avisoPresuTexto">—</p>
@@ -107,6 +116,14 @@
         <p class="card-sub" id="catChartSub">—</p>
       </div>
       <div id="catChart" class="catchart"></div>
+    </div>
+
+    <div class="card" id="cardMetas" hidden>
+      <div class="card-head">
+        <h2>Metas de ahorro</h2>
+        <p class="card-sub" id="metasSub">—</p>
+      </div>
+      <div id="listaMetas"></div>
     </div>
 
     <div class="card" id="cardPresu" hidden>
@@ -447,6 +464,33 @@
       <div id="cajaMovs"></div>
     </div>
 
+    <div id="metaResumen" hidden></div>
+
+    <div id="cajaMetas" hidden>
+      <div class="field">
+        <span class="field-label">Meta total <span class="opt">(opcional)</span></span>
+        <div class="amount-input amount-chico">
+          <span class="amount-cur" aria-hidden="true">$</span>
+          <input type="text" id="cajaMeta" inputmode="decimal" placeholder="Sin meta" autocomplete="off">
+        </div>
+        <p class="field-help">A cuánto querés llegar en total con esta caja.</p>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Meta mensual <span class="opt">(opcional)</span></span>
+        <div class="amount-input amount-chico">
+          <span class="amount-cur" aria-hidden="true">$</span>
+          <input type="text" id="cajaMetaMensual" inputmode="decimal" placeholder="Sin meta" autocomplete="off">
+        </div>
+        <p class="field-help">Cuánto te proponés apartar cada mes. Con las dos puestas, la app te dice en cuántos meses llegás.</p>
+      </div>
+    </div>
+
+    <button class="aviso-pro" id="metasPro" hidden>
+      <span class="aviso-pro-ico" aria-hidden="true">★</span>
+      <span>Ponele una meta a esta caja y mirá cuánto te falta y en cuántos meses llegás — <strong>Premium</strong></span>
+    </button>
+
     <div class="catform-top">
       <div class="emoji-preview" id="cajaEmojiPreview">🏦</div>
       <label class="field field-grow">
@@ -503,6 +547,14 @@
       </div>
     </div>
 
+    <div class="field" id="filaAvisos" hidden>
+      <label class="check-row">
+        <input type="checkbox" id="avisosSwitch">
+        <span class="field-label">Recordatorios</span>
+      </label>
+      <p class="field-help" id="avisosAyuda">—</p>
+    </div>
+
     <div class="field">
       <span class="field-label">Copia de seguridad</span>
       <p class="field-help" id="copiaEstado">—</p>
@@ -520,7 +572,11 @@
       <button class="btn btn-danger-ghost" id="btnBorrarTodo">Borrar todos los datos</button>
     </div>
 
-    <p class="appver" id="appVer">Mis Gastos</p>
+    <div class="field">
+      <span class="field-label">Versión</span>
+      <p class="field-help" id="appVer">Mis Gastos</p>
+      <button class="btn btn-ghost" id="btnBuscarVersion">Buscar actualizaciones</button>
+    </div>
   </div>
 </section>
 
@@ -778,6 +834,7 @@
 <script src="speech-recognition.js"></script>
 <script src="filesystem.js"></script>
 <script src="share.js"></script>
+<script src="local-notifications.js"></script>
 <script src="licencia.js"></script>
 <script src="app.js"></script>
 </body>

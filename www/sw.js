@@ -15,7 +15,7 @@
       de que el usuario quede clavado en una versión vieja para siempre.
    ========================================================= */
 
-const VERSION = '1.9';
+const VERSION = '2.1';
 const CACHE = `misgastos-${VERSION}`;
 
 const ARCHIVOS = [
@@ -27,6 +27,7 @@ const ARCHIVOS = [
   './speech-recognition.js',
   './filesystem.js',
   './share.js',
+  './local-notifications.js',
   './licencia.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '1.9';
+const APP_VER = '2.1';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -110,21 +110,84 @@ function evaluarPalabras(tokens) {
 }
 
 /** Interpreta "5.000", "5000,50", "$12.345", "15,5" con formato argentino */
+/**
+ * Lee un monto escrito a mano o dictado.
+ *
+ * Dos cosas que antes salían mal:
+ *
+ * 1. «30mil» daba 30. El campo descartaba todas las letras, así que los
+ *    multiplicadores que la voz sí entiende acá se perdían. Ahora los
+ *    entiende igual que el dictado: mil, luca, k, palo, millón.
+ *
+ * 2. «30,000» daba 30. La coma se tomaba siempre como decimal, que es lo
+ *    correcto en Argentina, pero el reconocedor de voz devuelve el
+ *    separador de miles a la inglesa y ahí el monto quedaba dividido por
+ *    mil. La regla que desempata: **la plata no tiene tres decimales**.
+ *    Si después del separador hay exactamente tres dígitos, es separador
+ *    de miles; con uno o dos, son centavos.
+ */
 function numeroDeTexto(raw) {
-  let s = (raw || '').replace(/[^\d.,]/g, '');
-  if (!s || !/\d/.test(s)) return null;
-  const tieneComa = s.includes(',');
-  if (tieneComa) {
-    s = s.replace(/\./g, '').replace(',', '.');
-  } else if (s.includes('.')) {
-    const partes = s.split('.');
-    const ultima = partes[partes.length - 1];
-    // "5.000" o "1.234.567" -> separador de miles; "15.5" -> decimal
-    if (partes.length > 2 || ultima.length === 3) s = partes.join('');
-    else s = partes.join('.');
+  const texto = (raw || '').toString();
+
+  /* El multiplicador puede venir pegado ("30mil"), separado ("30 mil") y
+     con palabras alrededor ("30 mil pesos", "gasté 2 palos en el auto").
+     Antes se exigía que la frase fuera exactamente número + multiplicador,
+     así que "30 mil pesos" terminaba valiendo 30: el multiplicador se
+     perdía y quedaba sólo el número suelto. */
+  const limpio = normalizar(texto);
+  let mult = 1;
+  const m = limpio.match(/(\d[\d.,]*)\s*(mil|miles|lucas?|k|palos?|millones?|millon)(?![\p{L}\p{N}])/u);
+  let cuerpo;
+  if (m) {
+    cuerpo = m[1];
+    mult = MULTIPLICADOR[m[2]] || 1;
+  } else {
+    /* Sin multiplicador: se toma el primer número de la frase. Si no hay
+       ninguno, se prueba con los números escritos en palabras, para que
+       "treinta mil" también sirva al tipearlo o dictarlo en el campo. */
+    const num = limpio.match(/\d[\d.,]*/);
+    if (num) {
+      cuerpo = num[0];
+    } else {
+      const porPalabras = evaluarPalabras(
+        limpio.split(/\s+/).filter(t => esNumPalabra(t)));
+      return porPalabras == null ? null : Math.round(porPalabras * 100) / 100;
+    }
   }
+
+  let s = cuerpo.replace(/[^\d.,]/g, '');
+  if (!s || !/\d/.test(s)) return null;
+
+  /* Qué separador es cuál:
+
+     · Si vienen los dos —«12.350,50»— el ÚLTIMO es el decimal y el otro
+       es de miles. Sirve igual para el formato de acá y para el inglés.
+     · Si viene uno solo repetido —«1.234.567»— es de miles.
+     · Si viene uno solo una vez, decide la cantidad de dígitos que le
+       siguen: tres son miles, uno o dos son centavos. */
+  const iPunto = s.lastIndexOf('.'), iComa = s.lastIndexOf(',');
+
+  if (iPunto >= 0 && iComa >= 0) {
+    const dec = iPunto > iComa ? '.' : ',';
+    const miles = dec === '.' ? ',' : '.';
+    s = s.split(miles).join('').replace(dec, '.');
+  } else {
+    const sep = iPunto >= 0 ? '.' : (iComa >= 0 ? ',' : null);
+    if (sep) {
+      const partes = s.split(sep);
+      const ultima = partes[partes.length - 1];
+      s = (partes.length > 2 || ultima.length === 3)
+        ? partes.join('')
+        : partes.slice(0, -1).join('') + '.' + ultima;
+    }
+  }
+
   const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+
+  /* Redondeo a centavos: 30 × 1000 en coma flotante puede dar 30000.000000001
+     y ese resto después aparece en los totales. */
+  return Math.round(n * mult * 100) / 100;
 }
 
 /* ---------------------------------------------------------
@@ -157,7 +220,7 @@ const CAJAS_BASE = [
   { nombre: 'Fondo de emergencia', emoji: '🛟' },
   { nombre: 'Vacaciones',          emoji: '🏖️' }
 ];
-const cajasNuevas = () => CAJAS_BASE.map(c => ({ id: uid(), ...c, creada: new Date().toISOString() }));
+const cajasNuevas = () => CAJAS_BASE.map(c => ({ id: uid(), ...c, meta: null, metaMensual: null, creada: new Date().toISOString() }));
 
 function datosIniciales() {
   return {
@@ -389,9 +452,14 @@ let toastT = null;
 function avisar(msg) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.remove('se-va');
   t.hidden = false;
   clearTimeout(toastT);
-  toastT = setTimeout(() => { t.hidden = true; }, 2600);
+  toastT = setTimeout(() => {
+    if (reducirMovimiento()) { t.hidden = true; return; }
+    t.classList.add('se-va');
+    setTimeout(() => { t.hidden = true; t.classList.remove('se-va'); }, DUR_SALIDA);
+  }, 2600);
 }
 
 /* ---------------------------------------------------------
@@ -436,6 +504,16 @@ function preguntar({ titulo, texto, acciones }) {
     });
 
     dlgResolver = resolver;
+
+    /* Un diálogo puede abrirse mientras el anterior todavía se está
+       yendo —pasa en toda confirmación de dos pasos—. Si no se cancela
+       aquella salida, su temporizador esconde este diálogo recién
+       abierto y la app parece trabada. */
+    clearTimeout(salidaDlg);
+    salidaDlg = null;
+    $('#dlg').classList.remove('se-va');
+    $('#dlgBack').classList.remove('se-va');
+
     $('#dlgBack').hidden = false;
     $('#dlg').hidden = false;
     document.body.style.overflow = 'hidden';
@@ -444,9 +522,21 @@ function preguntar({ titulo, texto, acciones }) {
   });
 }
 
+let salidaDlg = null;
+
 function cerrarDlg(valor = null) {
-  $('#dlgBack').hidden = true;
-  $('#dlg').hidden = true;
+  const dlg = $('#dlg'), fondo = $('#dlgBack');
+  if (reducirMovimiento()) {
+    dlg.hidden = true; fondo.hidden = true;
+  } else {
+    dlg.classList.add('se-va'); fondo.classList.add('se-va');
+    clearTimeout(salidaDlg);
+    salidaDlg = setTimeout(() => {
+      dlg.hidden = true; fondo.hidden = true;
+      dlg.classList.remove('se-va'); fondo.classList.remove('se-va');
+      salidaDlg = null;
+    }, DUR_SALIDA);
+  }
   // El scroll se libera sólo si abajo no quedó una hoja abierta.
   if (!$('.sheet:not([hidden])')) document.body.style.overflow = '';
   const r = dlgResolver;
@@ -479,6 +569,7 @@ function totales(ym) {
 }
 
 function renderResumen() {
+  pintarAvisoVersion();
   pintarAvisoCopia();
   pintarAvisoFijos();
   pintarAvisoPresu();
@@ -904,8 +995,17 @@ function renderAhorroChart() {
    Navegación
    --------------------------------------------------------- */
 function irA(v) {
+  const cambia = vista !== v;
   vista = v;
   $$('.view').forEach(s => { s.hidden = s.id !== 'view-' + v; });
+
+  /* La vista que entra aparece con un desplazamiento mínimo. Se
+     reinicia la animación quitando y volviendo a poner la clase, si no
+     el navegador la ignora al repetir la misma vista. */
+  if (cambia && !reducirMovimiento()) {
+    const sec = $('#view-' + v);
+    if (sec) { sec.classList.remove('entra'); void sec.offsetWidth; sec.classList.add('entra'); }
+  }
   $$('.nav-btn').forEach(b => b.classList.toggle('is-on', b.dataset.view === v));
   $('#viewTitle').textContent = { resumen: 'Resumen', movimientos: 'Movimientos', ahorros: 'Ahorros', categorias: 'Categorías' }[v];
   window.scrollTo({ top: 0 });
@@ -933,7 +1033,7 @@ function actualizarNavMes() {
 
 function renderTodo() {
   actualizarNavMes();
-  if (vista === 'resumen') { renderResumen(); renderPresupuestos(); }
+  if (vista === 'resumen') { renderResumen(); renderMetas(); renderPresupuestos(); }
   if (vista === 'movimientos') { $('#mesLabel2').textContent = mesLegible(mesSel); pintarAccesoFijos(); pintarAccesoFiltros(); renderMovimientos(); }
   if (vista === 'ahorros') { renderAhorros(); pintarCupo('#cupoCajas', 'cajas'); }
   if (vista === 'categorias') {
@@ -946,6 +1046,10 @@ function cambiarMes(delta) {
   const destino = mesSumar(mesSel, delta);
   if (destino > mesTope()) return;        // no se navega al futuro
   mesSel = destino;
+  /* El balance cambia solo y sin aviso al pasar de mes; este golpecito
+     es lo que hace que la vista no se sienta un salto. */
+  const h = $('#heroBalance');
+  if (h && !reducirMovimiento()) { h.classList.remove('cambia'); void h.offsetWidth; h.classList.add('cambia'); }
   grupoActivo = null;
   renderTodo();
 }
@@ -953,16 +1057,55 @@ function cambiarMes(delta) {
 /* ---------------------------------------------------------
    Hojas
    --------------------------------------------------------- */
+/* Las hojas entran y salen animadas. Lo que más se notaba era la
+   salida: abrían deslizándose y desaparecían de golpe, que es lo que
+   hace sentir una app «dura». Ahora bajan antes de esconderse.
+
+   El `hidden` se pone recién al terminar, pero la hoja deja de recibir
+   toques apenas empieza a irse: si no, un segundo toque durante la
+   animación vuelve a disparar la acción. */
+const DUR_SALIDA = 200;
+const salidas = new Map();
+
 function abrirHoja(id) {
-  $(`#${id}Back`).hidden = false;
-  $(`#${id}`).hidden = false;
+  const hoja = $(`#${id}`), fondo = $(`#${id}Back`);
+  const pend = salidas.get(id);
+  if (pend) { clearTimeout(pend); salidas.delete(id); }
+
+  hoja.classList.remove('se-va');
+  fondo.classList.remove('se-va');
+  fondo.hidden = false;
+  hoja.hidden = false;
   document.body.style.overflow = 'hidden';
 }
+
 function cerrarHoja(id) {
-  $(`#${id}Back`).hidden = true;
-  $(`#${id}`).hidden = true;
-  document.body.style.overflow = '';
+  const hoja = $(`#${id}`), fondo = $(`#${id}Back`);
+  if (!hoja || hoja.hidden) return;
+
+  if (reducirMovimiento()) {
+    hoja.hidden = true; fondo.hidden = true;
+    if (!$('.sheet:not([hidden])')) document.body.style.overflow = '';
+    return;
+  }
+
+  hoja.classList.add('se-va');
+  fondo.classList.add('se-va');
+
+  const t = setTimeout(() => {
+    hoja.hidden = true; fondo.hidden = true;
+    hoja.classList.remove('se-va');
+    fondo.classList.remove('se-va');
+    salidas.delete(id);
+    if (!$('.sheet:not([hidden])')) document.body.style.overflow = '';
+  }, DUR_SALIDA);
+  salidas.set(id, t);
 }
+
+/** Respeta la preferencia del sistema: hay gente a la que el movimiento
+    le marea, y otra que lo apaga por batería. */
+const reducirMovimiento = () =>
+  window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---- hoja de movimiento ---- */
 function pintarCatPicker() {
@@ -1334,6 +1477,7 @@ function abrirCaja(id = null) {
     $('#cajaSaldoBox').hidden = true;
     $('#cajaMovsBox').hidden = true;
   }
+  pintarMetasCaja(id);
   $('#cajaEmojiPreview').textContent = borradorCajaEmoji;
   $('#cajaEmojiInput').value = '';
   pintarEmojiGridCaja();
@@ -1386,10 +1530,30 @@ function guardarCaja() {
     err.hidden = false;
     return;
   }
+  /* Las metas sólo se tocan con Premium. Si alguien lo pierde, los
+     números que ya había puesto no se borran: dejan de mostrarse y
+     vuelven si reactiva, igual que los presupuestos. */
+  let metas;
+  if (puede('metas')) {
+    const t = numeroDeTexto($('#cajaMeta').value);
+    const m = numeroDeTexto($('#cajaMetaMensual').value);
+    metas = {
+      meta: (t != null && t > 0) ? Math.round(t * 100) / 100 : null,
+      metaMensual: (m != null && m > 0) ? Math.round(m * 100) / 100 : null
+    };
+  }
+
   if (editandoCaja) {
-    Object.assign(cajaPorId(editandoCaja), { nombre, emoji: borradorCajaEmoji });
+    const c = cajaPorId(editandoCaja);
+    Object.assign(c, { nombre, emoji: borradorCajaEmoji });
+    if (metas) Object.assign(c, metas);
   } else {
-    db.cajas.push({ id: uid(), nombre, emoji: borradorCajaEmoji, creada: new Date().toISOString() });
+    db.cajas.push({
+      id: uid(), nombre, emoji: borradorCajaEmoji,
+      meta: (metas && metas.meta) || null,
+      metaMensual: (metas && metas.metaMensual) || null,
+      creada: new Date().toISOString()
+    });
   }
   guardar();
   cerrarHoja('sheetCaja');
@@ -1640,8 +1804,9 @@ function abrirAjustes() {
   const nf = (db.fijos || []).length;
   $('#statsLinea').textContent = `${nm} movimiento${nm === 1 ? '' : 's'}, ${nc} categorías, ${nj} caja${nj === 1 ? '' : 's'} de ahorro`
     + (nf ? ` y ${nf} fijo${nf === 1 ? '' : 's'}` : '') + ' en este dispositivo.';
-  $('#appVer').textContent = `Mis Gastos · v${APP_VER}${esNativo ? ' · APK' : ''}`;
+  $('#appVer').textContent = `Mis Gastos · BETA ${APP_VER}${esNativo ? ' · APK' : ''}`;
   pintarEstadoCopia();
+  pintarAvisosAjustes();
   pintarPlan();
   abrirHoja('sheetSet');
 }
@@ -1716,6 +1881,7 @@ function postergarAvisoCopia() {
   db.ajustes.avisoCopiaHasta = hoyISO(d);
   guardar();
   pintarAvisoCopia();
+  avisar('Listo, te lo recuerdo en dos semanas');
 }
 
 /* ---------- armar y leer el archivo ---------- */
@@ -1773,10 +1939,13 @@ function sanearDatos(entrada) {
   for (const j of (Array.isArray(entrada.cajas) ? entrada.cajas : [])) {
     const nombre = j ? texto(j.nombre, 40) : '';
     if (!nombre) continue;
+    const mt = Number(j.meta), mm = Number(j.metaMensual);
     cajas.push({
       id: String(j.id || uid()),
       nombre,
       emoji: texto(j.emoji, 8) || '🏦',
+      meta: (isFinite(mt) && mt > 0) ? Math.round(mt * 100) / 100 : null,
+      metaMensual: (isFinite(mm) && mm > 0) ? Math.round(mm * 100) / 100 : null,
       creada: typeof j.creada === 'string' ? j.creada : new Date().toISOString()
     });
   }
@@ -1964,7 +2133,17 @@ function fusionar(actual, entrante) {
   const porCaja = new Map(r.cajas.map(c => [normalizar(c.nombre), c.id]));
   for (const c of entrante.cajas) {
     const k = normalizar(c.nombre);
-    if (porCaja.has(k)) { mapaCaja.set(c.id, porCaja.get(k)); continue; }
+    if (porCaja.has(k)) {
+      // misma lógica que con los presupuestos: no se pierde lo que el
+      // usuario había puesto en la copia que trae
+      const mia = r.cajas.find(x => x.id === porCaja.get(k));
+      if (mia) {
+        if (!mia.meta && c.meta) mia.meta = c.meta;
+        if (!mia.metaMensual && c.metaMensual) mia.metaMensual = c.metaMensual;
+      }
+      mapaCaja.set(c.id, porCaja.get(k));
+      continue;
+    }
     const id = uid();
     r.cajas.push({ ...c, id });
     porCaja.set(k, id);
@@ -2042,8 +2221,15 @@ async function exportar() {
         avisar('Copia guardada');
         return;
       } catch (e) {
+        /* Si la persona cerró el menú de compartir, no se guardó nada:
+           hay que decirlo. Antes se volvía en silencio y el botón parecía
+           roto, que es exactamente lo que no tiene que pasar con el
+           único botón que protege los datos. */
         const msg = (e && (e.message || e.errorMessage)) || '';
-        if (/cancel/i.test(msg)) return;      // el usuario cerró el menú
+        if (/cancel|abort|dismiss/i.test(msg)) {
+          avisar('No se guardó la copia. Probá de nuevo y elegí dónde guardarla.');
+          return;
+        }
         console.warn('No pude compartir la copia:', e);
       }
     }
@@ -2076,7 +2262,7 @@ let modoHojaCopia = 'mostrar';
 function mostrarCopiaComoTexto(texto) {
   modoHojaCopia = 'mostrar';
   $('#sheetCopiaTitle').textContent = 'Copia de seguridad';
-  $('#copiaAyuda').textContent = 'No pude guardar el archivo solo. Copiá este texto y pegalo donde lo vayas a encontrar: un mensaje guardado, un mail para vos mismo o una nota en Drive.';
+  $('#copiaAyuda').textContent = 'No pude guardar el archivo solo en este teléfono. Copiá este texto y pegalo donde lo vayas a encontrar: un mensaje guardado, un mail para vos mismo o una nota en Drive. Sirve igual que el archivo.';
   const t = $('#copiaTexto');
   t.value = texto;
   t.readOnly = true;
@@ -2355,6 +2541,11 @@ function conectar() {
      archivos es incómodo y mucha gente tiene la copia en un mensaje. */
   $('#btnImportar').addEventListener('click', pedirImportacion);
 
+  /* Los dos botones del aviso del Resumen. Estaban dibujados pero sin
+     conectar: se tocaban y no pasaba nada. */
+  $('#avisoCopiaOk').addEventListener('click', exportar);
+  $('#avisoCopiaNo').addEventListener('click', postergarAvisoCopia);
+
   /* La hoja de texto, que sirve para las dos puntas: mostrar la copia
      cuando no se pudo guardar el archivo, y pegarla para importarla. */
   $('#sheetCopiaClose').addEventListener('click', () => cerrarHoja('sheetCopia'));
@@ -2384,6 +2575,181 @@ function conectar() {
       if (vista === 'ahorros') renderAhorroChart();
     }, 160);
   });
+}
+
+/* =========================================================
+   Metas de ahorro (Premium)
+
+   Cada caja puede tener dos objetivos, y son cosas distintas:
+
+   · La **meta total** es a dónde querés llegar: 2 millones para la
+     camioneta. Mide el saldo acumulado de la caja.
+   · La **meta mensual** es cuánto te propusiste apartar cada mes. Mide
+     sólo lo del mes que estás viendo, y se reinicia solo.
+
+   Se pueden poner las dos, una sola o ninguna. Cuando están las dos, la
+   app calcula a qué ritmo vas: con lo que apartás por mes, cuántos meses
+   faltan para la meta total. Eso es lo que convierte un número abstracto
+   en una fecha.
+   ========================================================= */
+
+/** Lo que se apartó en una caja durante un mes (aportes menos retiros). */
+function aportadoEnMes(cajaId, ym) {
+  let total = 0;
+  for (const m of movsDelMes(ym)) {
+    if (m.tipo === 'ahorro' && m.cajaId === cajaId) total += m.monto * signoAhorro(m);
+  }
+  return total;
+}
+
+/**
+ * Estado de las metas de una caja. Función pura sobre los datos.
+ *
+ * `faltanMeses` es null si no se puede estimar: sin meta mensual, o
+ * cuando el mes vino en rojo —si estás sacando plata en vez de poner, no
+ * hay ritmo que proyectar y mentir una fecha sería peor que no darla.
+ */
+function estadoMetas(caja, ym) {
+  const saldo = saldoCaja(caja.id);
+  const meta = Number(caja.meta) > 0 ? Number(caja.meta) : null;
+  const mensual = Number(caja.metaMensual) > 0 ? Number(caja.metaMensual) : null;
+  const esteMes = aportadoEnMes(caja.id, ym);
+
+  const r = {
+    saldo, meta, mensual, esteMes,
+    hayMetas: !!(meta || mensual),
+    pctTotal: meta ? Math.max(0, (saldo / meta) * 100) : null,
+    faltaTotal: meta ? Math.max(0, meta - saldo) : null,
+    cumplida: meta ? saldo >= meta : false,
+    /* La barra se acota a cero para no dibujarse hacia atrás, pero el
+       faltante no: si el mes vino en rojo porque sacaste plata, para
+       cerrarlo con la meta cumplida hace falta reponer eso además. Es
+       menos cómodo de leer y es el número real. */
+    pctMes: mensual ? Math.max(0, (esteMes / mensual) * 100) : null,
+    faltaMes: mensual ? Math.max(0, mensual - esteMes) : null,
+    cumplidaMes: mensual ? esteMes >= mensual : false,
+    faltanMeses: null,
+    mesLlegada: null
+  };
+
+  if (meta && mensual && !r.cumplida) {
+    r.faltanMeses = Math.ceil(r.faltaTotal / mensual);
+    r.mesLlegada = mesSumar(ym, r.faltanMeses);
+  }
+  return r;
+}
+
+/** Las cajas que tienen alguna meta puesta, para el resumen. */
+const cajasConMeta = () =>
+  (db.cajas || []).filter(c => Number(c.meta) > 0 || Number(c.metaMensual) > 0);
+
+/* ---------- dentro de la hoja de la caja ---------- */
+
+function pintarMetasCaja(id) {
+  const pro = puede('metas');
+  const hayCaja = !!id;
+
+  $('#metasPro').hidden = !(hayCaja && !pro);
+  $('#cajaMetas').hidden = !(hayCaja && pro);
+  $('#metaResumen').hidden = true;
+  if (!hayCaja || !pro) return;
+
+  const c = cajaPorId(id);
+  if (!c) return;
+
+  $('#cajaMeta').value = Number(c.meta) > 0 ? c.meta : '';
+  $('#cajaMetaMensual').value = Number(c.metaMensual) > 0 ? c.metaMensual : '';
+
+  const e = estadoMetas(c, mesSel);
+  if (!e.hayMetas) return;
+
+  $('#metaResumen').hidden = false;
+  $('#metaResumen').innerHTML = filaMeta(e);
+}
+
+/** El resumen de progreso que se ve arriba de los campos. */
+function filaMeta(e) {
+  const partes = [];
+
+  if (e.meta) {
+    const clase = e.cumplida ? 'is-lista' : '';
+    partes.push(`
+      <div class="meta-bloque ${clase}">
+        <div class="meta-top">
+          <span class="meta-tit">Meta total</span>
+          <span class="meta-pct">${Math.round(e.pctTotal)}%</span>
+        </div>
+        <div class="catrow-track"><div class="meta-fill" style="width:${Math.min(100, e.pctTotal)}%"></div></div>
+        <p class="meta-pie">${e.cumplida
+          ? `¡Llegaste! ${plata(e.saldo)} de ${plata(e.meta)}`
+          : `${plata(e.saldo)} de ${plata(e.meta)} · faltan ${plata(e.faltaTotal)}`}</p>
+      </div>`);
+  }
+
+  if (e.mensual) {
+    const clase = e.cumplidaMes ? 'is-lista' : '';
+    partes.push(`
+      <div class="meta-bloque ${clase}">
+        <div class="meta-top">
+          <span class="meta-tit">Este mes</span>
+          <span class="meta-pct">${Math.round(e.pctMes)}%</span>
+        </div>
+        <div class="catrow-track"><div class="meta-fill" style="width:${Math.min(100, e.pctMes)}%"></div></div>
+        <p class="meta-pie">${e.cumplidaMes
+          ? `Ya apartaste ${plata(e.esteMes)} de ${plata(e.mensual)}`
+          : `${plata(e.esteMes)} de ${plata(e.mensual)} · faltan ${plata(e.faltaMes)}`}</p>
+      </div>`);
+  }
+
+  if (e.faltanMeses != null) {
+    const n = e.faltanMeses;
+    partes.push(`<p class="meta-ritmo">A ${plata(e.mensual)} por mes, llegás en ${n} mes${n === 1 ? '' : 'es'} · ${mesLegible(e.mesLlegada)}</p>`);
+  }
+
+  return partes.join('');
+}
+
+/* ---------- la tarjeta del Resumen ---------- */
+
+function renderMetas() {
+  const card = $('#cardMetas');
+  if (!card) return;
+
+  const lista = puede('metas') ? cajasConMeta() : [];
+  card.hidden = !lista.length;
+  if (!lista.length) return;
+
+  const estados = lista.map(c => ({ caja: c, e: estadoMetas(c, mesSel) }));
+  const listas = estados.filter(x => x.e.cumplida).length;
+  $('#metasSub').textContent = listas
+    ? `${listas} de ${lista.length} cumplida${listas === 1 ? '' : 's'}`
+    : `${lista.length} caja${lista.length === 1 ? '' : 's'} con meta`;
+
+  $('#listaMetas').innerHTML = estados.map(({ caja, e }) => {
+    /* Si hay meta total se muestra ésa, que es la que la persona tiene en
+       la cabeza; si sólo hay mensual, se muestra la del mes. */
+    const usaTotal = !!e.meta;
+    const pct = usaTotal ? e.pctTotal : e.pctMes;
+    const lista_ = usaTotal ? e.cumplida : e.cumplidaMes;
+    const pie = usaTotal
+      ? (e.cumplida ? `¡Llegaste! ${plata(e.meta)}` : `${plata(e.saldo)} de ${plata(e.meta)}`)
+      : (e.cumplidaMes ? `Este mes: ${plata(e.esteMes)} de ${plata(e.mensual)}` : `Este mes: ${plata(e.esteMes)} de ${plata(e.mensual)}`);
+    const ritmo = (usaTotal && e.faltanMeses != null)
+      ? `<span class="meta-row-ritmo">${e.faltanMeses} mes${e.faltanMeses === 1 ? '' : 'es'}</span>` : '';
+
+    return `<button class="meta-row ${lista_ ? 'is-lista' : ''}" data-id="${caja.id}">
+      <span class="meta-row-top">
+        <span class="catrow-emoji">${esc(caja.emoji)}</span>
+        <span class="catrow-name">${esc(caja.nombre)}</span>
+        <span class="meta-pct">${Math.round(pct)}%</span>
+      </span>
+      <span class="catrow-track"><span class="meta-fill" style="width:${Math.min(100, pct)}%"></span></span>
+      <span class="meta-row-pie">${esc(pie)}${ritmo}</span>
+    </button>`;
+  }).join('');
+
+  $$('#listaMetas .meta-row').forEach(el =>
+    el.addEventListener('click', () => { irA('ahorros'); abrirCaja(el.dataset.id); }));
 }
 
 /* =========================================================
@@ -3121,6 +3487,321 @@ function conectarFijos() {
 }
 
 /* =========================================================
+   Recordatorios
+
+   Una app de gastos sirve sólo si se usa todos los días, y lo que hace
+   que se use no es la app: es acordarse. De eso se ocupan estos avisos.
+
+   Cómo funciona, que es lo que permite que ande sin servidor:
+
+   Cada vez que la persona abre la app se borran los recordatorios
+   pendientes y se vuelven a programar desde ese momento. Entonces:
+
+   · Si no abre la app en todo el día, a la noche le llega el aviso que
+     quedó programado.
+   · Si la abrió, ese aviso se corrió, y además queda uno para unas horas
+     más tarde —porque los gastos del día siguen apareciendo después de
+     que uno cargó los de la mañana.
+
+   Los textos rotan. Un recordatorio que dice siempre lo mismo se vuelve
+   invisible a la semana.
+
+   **Esto sólo funciona de verdad en el APK.** El navegador no puede
+   despertar una página cerrada para mostrar un aviso a una hora
+   determinada: haría falta un servidor de notificaciones push. En la
+   PWA, entonces, ni se pide el permiso: pedir algo que no vas a poder
+   cumplir es peor que no ofrecerlo.
+   ========================================================= */
+
+const HORA_RECORDATORIO = 21;     // el aviso del día, a las 21
+const HORAS_DESPUES = 6;          // el toque cuando ya entró hoy
+const DIAS_PROGRAMADOS = 14;      // hasta dónde se deja agendado
+
+/* Variaciones. La gracia es que no parezca un robot repitiendo. */
+const AVISOS_DIA = [
+  { t: '¿Cómo venís hoy?',        c: 'Cargá lo que gastaste antes de que se te mezcle con mañana.' },
+  { t: 'Dos minutos y listo',     c: 'Anotá los gastos del día mientras los tenés frescos.' },
+  { t: 'Un repaso rápido',        c: '¿Hubo algún gasto hoy que todavía no cargaste?' },
+  { t: 'Antes de que se olvide',  c: 'Lo que no se anota hoy, mañana ya no se acuerda nadie.' },
+  { t: 'Tu resumen te espera',    c: 'Cargá el día y mirá cómo viene el mes.' },
+  { t: '¿Gastaste algo hoy?',     c: 'Tocá el micrófono y decilo, es más rápido que escribirlo.' },
+  { t: 'Cerrá el día',            c: 'Un minuto ahora te ahorra media hora a fin de mes.' },
+  { t: 'No pierdas el hilo',      c: 'Llevás varios días seguidos cargando. Seguí así.' }
+];
+
+const AVISOS_LUEGO = [
+  { t: '¿Algo nuevo?',            c: 'Si gastaste algo desde la última vez, cargalo ahora.' },
+  { t: 'Un ratito más',           c: '¿Quedó algún gasto del día sin anotar?' },
+  { t: 'Mientras te acordás',     c: 'Agregá lo que haya salido en estas horas.' },
+  { t: 'Para no acumular',        c: 'Cargá lo del rato y listo, no se te junta.' }
+];
+
+const plugNotif = () => (window.Capacitor && window.Capacitor.Plugins &&
+                         window.Capacitor.Plugins.LocalNotifications) || null;
+
+/** Los recordatorios tienen sentido sólo donde se pueden cumplir. */
+const puedeRecordar = () => !!(esNativo && plugNotif());
+
+/* ---------- permiso ---------- */
+
+/**
+ * Se pide una sola vez. Si la persona dice que no, no se vuelve a
+ * insistir: queda el interruptor en Ajustes para cuando quiera.
+ */
+async function pedirPermisoAvisos({ aMano = false } = {}) {
+  const P = plugNotif();
+  if (!P) return false;
+
+  try {
+    let { display } = await P.checkPermissions();
+    if (display === 'prompt' || display === 'prompt-with-rationale' || aMano) {
+      ({ display } = await P.requestPermissions());
+    }
+    const ok = display === 'granted';
+    db.ajustes.avisos = ok;
+    db.ajustes.avisosPedidos = true;
+    guardar();
+    pintarAvisosAjustes();
+    if (ok) programarRecordatorios();
+    return ok;
+  } catch (e) {
+    console.warn('No pude pedir el permiso de avisos:', e);
+    return false;
+  }
+}
+
+/** Al primer arranque, una sola vez en la vida de la instalación. */
+async function iniciarAvisos() {
+  if (!puedeRecordar()) { pintarAvisosAjustes(); return; }
+  if (!db.ajustes.avisosPedidos) {
+    await pedirPermisoAvisos();
+    return;
+  }
+  if (db.ajustes.avisos) programarRecordatorios();
+  pintarAvisosAjustes();
+}
+
+/* ---------- programar ---------- */
+
+const unoDe = (lista, i) => lista[Math.abs(i) % lista.length];
+
+/** Arma la lista de avisos que corresponden a partir de ahora. */
+function planDeAvisos(ahora = new Date()) {
+  const plan = [];
+  let id = 1;
+
+  /* El toque de «unas horas más tarde»: sólo si cae en un horario
+     decente. Nadie quiere que la app lo despierte a las 4 de la mañana
+     para hablarle de la nafta. */
+  const luego = new Date(ahora.getTime() + HORAS_DESPUES * 3600e3);
+  if (luego.getHours() >= 9 && luego.getHours() <= 22) {
+    const a = unoDe(AVISOS_LUEGO, ahora.getDate());
+    plan.push({ id: id++, title: a.t, body: a.c, at: luego });
+  }
+
+  /* El aviso diario de la noche, para los días que vengan. El de hoy
+     sólo si todavía no pasó la hora. */
+  for (let d = 0; d < DIAS_PROGRAMADOS; d++) {
+    const f = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + d, HORA_RECORDATORIO, 0, 0, 0);
+    if (f <= ahora) continue;
+    const a = unoDe(AVISOS_DIA, f.getDate() + d);
+    plan.push({ id: id++, title: a.t, body: a.c, at: f });
+  }
+  return plan;
+}
+
+async function programarRecordatorios() {
+  const P = plugNotif();
+  if (!P || !db.ajustes.avisos) return;
+
+  try {
+    const pend = await P.getPending();
+    if (pend && pend.notifications && pend.notifications.length) {
+      await P.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+    }
+
+    const plan = planDeAvisos();
+    if (!plan.length) return;
+
+    await P.schedule({
+      notifications: plan.map(n => ({
+        id: n.id,
+        title: n.title,
+        body: n.body,
+        schedule: { at: n.at, allowWhileIdle: true },
+        smallIcon: 'ic_stat_icon_config_sample',
+        channelId: 'recordatorios'
+      }))
+    });
+  } catch (e) {
+    console.warn('No pude programar los recordatorios:', e);
+  }
+}
+
+async function apagarRecordatorios() {
+  const P = plugNotif();
+  if (!P) return;
+  try {
+    const pend = await P.getPending();
+    if (pend && pend.notifications && pend.notifications.length) {
+      await P.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
+    }
+  } catch (e) { /* nada que hacer */ }
+}
+
+/* ---------- interruptor en Ajustes ---------- */
+
+function pintarAvisosAjustes() {
+  const fila = $('#filaAvisos');
+  if (!fila) return;
+
+  /* En el navegador no se muestra siquiera: no se puede cumplir. */
+  fila.hidden = !puedeRecordar();
+  if (!puedeRecordar()) return;
+
+  $('#avisosSwitch').checked = !!db.ajustes.avisos;
+  $('#avisosAyuda').textContent = db.ajustes.avisos
+    ? `Te recordamos a la noche si no entraste, y unas horas después si ya habías entrado.`
+    : 'Activalos y te recordamos cargar los gastos del día.';
+}
+
+async function cambiarAvisos(encender) {
+  if (encender) {
+    const ok = await pedirPermisoAvisos({ aMano: true });
+    if (!ok) {
+      $('#avisosSwitch').checked = false;
+      await soloAviso('Faltan los permisos',
+        'Android tiene bloqueadas las notificaciones de Mis Gastos. Se habilitan desde los ajustes del teléfono, en la ficha de la app.');
+    }
+    return;
+  }
+  db.ajustes.avisos = false;
+  guardar();
+  await apagarRecordatorios();
+  pintarAvisosAjustes();
+}
+
+function conectarAvisos() {
+  const sw = $('#avisosSwitch');
+  if (sw) sw.addEventListener('change', e => cambiarAvisos(e.target.checked));
+}
+
+/* =========================================================
+   Aviso de versión nueva
+
+   La app pregunta de tanto en tanto si hay una versión más nueva. No se
+   actualiza sola —un APK bajado fuera de Play Store no puede instalarse
+   a sí mismo— pero avisa y deja el link a mano, que es lo que hace la
+   diferencia entre un usuario al día y uno con la versión de hace tres
+   meses sin enterarse.
+
+   Del lado del servidor es un archivo de dos líneas, `version.json`:
+
+       { "version": "2.0", "apk": "https://…/app-debug.apk",
+         "nota": "Metas de ahorro y recordatorios" }
+
+   Publicar una versión pasa a ser editar ese archivo.
+
+   Decisiones para que esto no moleste:
+   · Se consulta una vez por día como mucho. No hace falta más.
+   · Si no hay internet o el archivo no está, no pasa nada: se calla y
+     sigue. Una app que te grita porque no pudo chequear algo es peor
+     que una app desactualizada.
+   · El aviso se puede posponer, y entonces no vuelve hasta la versión
+     siguiente. Nadie quiere pelear todos los días con el mismo cartel.
+   ========================================================= */
+
+/* Dónde está el archivo `version.json`.
+
+   Tiene que ser la dirección completa: adentro del APK no hay servidor,
+   así que una ruta relativa no apunta a ningún lado.
+
+   Vacío = apagado. Mientras no lo configures, la app ni lo intenta: no
+   tiene sentido que miles de teléfonos golpeen una dirección que no
+   existe, y en la pantalla de Ajustes se avisa que falta ponerla.
+
+   Ejemplo: 'https://misgastos.netlify.app/version.json' */
+const URL_VERSION = '';
+
+const HORAS_ENTRE_CHEQUEOS = 24;
+
+/** Compara "1.10" contra "1.9" como números, no como texto: por orden
+    alfabético "1.10" sería menor que "1.9" y el aviso nunca aparecería. */
+function versionMayor(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+async function buscarActualizacion({ aMano = false } = {}) {
+  const aj = db.ajustes;
+
+  if (!URL_VERSION) {
+    if (aMano) avisar('Falta configurar la dirección de las actualizaciones.');
+    return;
+  }
+
+  if (!aMano) {
+    const ultimo = aj.ultimoChequeo ? new Date(aj.ultimoChequeo).getTime() : 0;
+    if (Date.now() - ultimo < HORAS_ENTRE_CHEQUEOS * 3600e3) { pintarAvisoVersion(); return; }
+  }
+
+  try {
+    const res = await fetch(URL_VERSION + '?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('no disponible');
+    const info = await res.json();
+
+    aj.ultimoChequeo = new Date().toISOString();
+    if (info && info.version && versionMayor(info.version, APP_VER)) {
+      aj.versionNueva = { version: String(info.version), apk: info.apk || '', nota: info.nota || '' };
+    } else {
+      delete aj.versionNueva;
+    }
+    guardar();
+  } catch (e) {
+    /* Sin internet o sin archivo: no es un problema del usuario. */
+    if (aMano) avisar('No pude comprobarlo ahora. Probá más tarde.');
+  }
+  pintarAvisoVersion();
+}
+
+function pintarAvisoVersion() {
+  const el = $('#avisoVersion');
+  if (!el) return;
+  const v = db.ajustes.versionNueva;
+  const pospuesta = db.ajustes.versionPospuesta;
+  const mostrar = !!(v && v.version !== pospuesta);
+
+  el.hidden = !mostrar;
+  if (!mostrar) return;
+
+  $('#avisoVersionTexto').textContent = v.nota
+    ? `Está la BETA ${v.version}: ${v.nota}`
+    : `Está disponible la BETA ${v.version}. La que tenés es la ${APP_VER}.`;
+
+  const bajar = $('#avisoVersionOk');
+  bajar.hidden = !v.apk;
+  if (v.apk) bajar.href = v.apk;
+}
+
+function posponerVersion() {
+  const v = db.ajustes.versionNueva;
+  if (v) { db.ajustes.versionPospuesta = v.version; guardar(); }
+  pintarAvisoVersion();
+}
+
+function conectarVersion() {
+  const b = $('#btnBuscarVersion');
+  if (b) b.hidden = !URL_VERSION;
+  $('#avisoVersionNo').addEventListener('click', posponerVersion);
+  $('#btnBuscarVersion').addEventListener('click', () => buscarActualizacion({ aMano: true }));
+}
+
+/* =========================================================
    Plan: Gratis y Premium
 
    Mis Gastos es una app personal y se cobra **una sola vez**. No hay
@@ -3211,7 +3892,6 @@ function usados(cual) {
 
 const cupoDe = cual => Lic.cupo(cual, usados(cual), plan);
 
-const cupoDeCat = tipo => cupoDe(tipo === 'ingreso' ? 'catIngreso' : 'catEgreso');
 
 /** Portero. Devuelve true si hay que cortar porque el cupo está lleno. */
 function cupoLleno(cual) {
@@ -3319,6 +3999,7 @@ const MOTIVOS = {
   cajas:      () => `Llegaste a las ${Lic.LIMITES.cajas} cajas de ahorro que incluye el plan gratis.`,
   fijos:      () => 'Programá el alquiler, el sueldo o la cuota del gimnasio una sola vez y que se carguen solos todos los meses.',
   presupuestos: () => 'Ponele un tope mensual a cada categoría y que la app te avise cuando te pasás.',
+  metas:      () => 'Ponele una meta a cada caja de ahorro y mirá cuánto te falta y en cuántos meses llegás.',
   comparar:   () => 'Mirá en qué se te fue la plata este mes comparado con los anteriores, categoría por categoría.',
   filtros:    () => 'Buscá en todo tu historial, no sólo en el mes que estás viendo: por categoría, por monto o por período.'
 };
@@ -3420,6 +4101,7 @@ function conectarLicencia() {
   $('#sheetProBack').addEventListener('click', () => cerrarHoja('sheetPro'));
   $('#btnProTengo').addEventListener('click', () => { cerrarHoja('sheetPro'); abrirLicencia(); });
   $('#presuPro').addEventListener('click', () => { cerrarHoja('sheetCat'); editandoCat = null; abrirPremium('presupuestos'); });
+  $('#metasPro').addEventListener('click', () => { cerrarHoja('sheetCaja'); editandoCaja = null; abrirPremium('metas'); });
   $('#btnProHeader').addEventListener('click', () => abrirPremium(null));
   $('#btnProCard').addEventListener('click', () => abrirPremium(null));
 }
@@ -3435,10 +4117,16 @@ conectarLicencia();
 conectarFijos();
 conectarComparar();
 conectarFiltros();
+conectarVersion();
+conectarAvisos();
 irA('resumen');
 /* La verificación es asíncrona (Web Crypto). La app arranca en modo libre y
    se corrige en cuanto termina, unos milisegundos después. */
 iniciarLicencia();
+/* Una vez por día, en segundo plano y sin molestar si falla. */
+buscarActualizacion();
+/* Los recordatorios: en el APK se piden al primer arranque. */
+iniciarAvisos();
 // el ancho real recién está disponible después del primer pintado
 requestAnimationFrame(() => { if (vista === 'resumen') renderMesChart(); });
 
