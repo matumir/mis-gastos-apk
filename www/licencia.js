@@ -201,6 +201,7 @@
     metas              : ['per', 'neg'],   // objetivos en las cajas de ahorro
     comparar           : ['per', 'neg'],   // comparar contra meses anteriores
     filtros            : ['per', 'neg'],   // buscar y filtrar en todo el historial
+    escaner            : ['per', 'neg'],   // leer tickets con la cámara (QR + OCR local)
     exportarPlanilla   : ['neg'],          // Excel/PDF: queda para el sistema de negocios
     cuentaCorriente    : ['neg'],
     multiusuario       : ['neg']

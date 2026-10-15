@@ -35,12 +35,25 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      # Sin esto, cada compilación firma el APK con una clave nueva y Android
-      # se niega a instalar la actualización encima de la anterior ("paquete en
-      # conflicto"), obligando a desinstalar y perder los datos. Guardando la
-      # clave entre compilaciones, las actualizaciones entran encima sin tocar
-      # nada. Ver la nota sobre la firma en LEEME-APK.md.
-      - name: Conservar la clave de firma
+      # Clave de firma propia (secretos del repositorio). Si están cargados se
+      # compila el APK de release firmado con ella: es la forma estable de que
+      # las actualizaciones entren encima sin perder datos. Si no están, se
+      # cae al modo anterior (clave de debug cacheada), que es frágil.
+      - name: Preparar la clave de firma
+        id: firma
+        env:
+          KS_B64: ${{ secrets.MG_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Sin clave propia: se firma con la clave de debug (frágil)."
+          fi
+
+      - name: Conservar la clave de debug (solo modo sin clave propia)
+        if: steps.firma.outputs.release == 'false'
         uses: actions/cache@v4
         with:
           path: ~/.android/debug.keystore
@@ -53,23 +66,34 @@ jobs:
         run: npx cap sync android
 
       - name: Compilar
+        env:
+          MG_KEYSTORE: ${{ steps.firma.outputs.release == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
+          MG_STORE_PASS: ${{ secrets.MG_STORE_PASS }}
+          MG_KEY_ALIAS: ${{ secrets.MG_KEY_ALIAS }}
+          MG_KEY_PASS: ${{ secrets.MG_KEY_PASS }}
         run: |
           chmod +x android/gradlew
-          cd android && ./gradlew assembleDebug --no-daemon
+          cd android
+          if [ "${{ steps.firma.outputs.release }}" = "true" ]; then
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../mis-gastos.apk
+          else
+            ./gradlew assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../mis-gastos.apk
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: mis-gastos-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: mis-gastos.apk
           if-no-files-found: error
 
-      # Además del artifact (que se baja como .zip), publica un Release con el
-      # .apk suelto: desde el celular se toca el link y se instala directo.
+      # Release con el .apk suelto y SIEMPRE con el mismo nombre, así el link
+      # .../releases/latest/download/mis-gastos.apk no cambia nunca.
       - name: Publicar el APK para bajar del celular
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "build-${{ github.run_number }}" \
-            android/app/build/outputs/apk/debug/app-debug.apk \
+          gh release create "build-${{ github.run_number }}" mis-gastos.apk \
             --title "Mis Gastos — build ${{ github.run_number }}" \
-            --notes "APK de depuración. Abrilo desde el celular para instalar."
+            --notes "Abrilo desde el celular para instalar."

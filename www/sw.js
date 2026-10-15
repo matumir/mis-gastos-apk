@@ -15,8 +15,15 @@
       de que el usuario quede clavado en una versión vieja para siempre.
    ========================================================= */
 
-const VERSION = '2.1';
+const VERSION = '2.2';
 const CACHE = `misgastos-${VERSION}`;
+
+/* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium
+   no lo necesita nunca) y vive en un cache aparte, sin versión: así no
+   se vuelve a bajar entero cada vez que sale una versión nueva de la app.
+   Si algún día se cambia la librería, subí este número. */
+const CACHE_OCR = 'misgastos-ocr-1';
+const esOcr = url => url.includes('/vendor/');
 
 const ARCHIVOS = [
   './',
@@ -29,6 +36,8 @@ const ARCHIVOS = [
   './share.js',
   './local-notifications.js',
   './licencia.js',
+  './ticket.js',
+  './privacidad.html',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -48,7 +57,7 @@ self.addEventListener('install', ev => {
 self.addEventListener('activate', ev => {
   ev.waitUntil(
     caches.keys()
-      .then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== CACHE_OCR).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -68,6 +77,17 @@ self.addEventListener('fetch', ev => {
           return res;
         })
         .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
+    );
+    return;
+  }
+
+  /* Lector de tickets: cache primero y para siempre (ver CACHE_OCR). */
+  if (esOcr(req.url)) {
+    ev.respondWith(
+      caches.open(CACHE_OCR).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
+        if (res && res.status === 200) c.put(req, res.clone());
+        return res;
+      })))
     );
     return;
   }

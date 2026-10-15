@@ -264,6 +264,9 @@
 
 <!-- ===================== BOTONES DE ALTA ===================== -->
 <div class="fabs">
+  <button class="fab fab-ticket" id="fabTicket" aria-label="Escanear un ticket" title="Escanear un ticket">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h12v17l-2-1.3-2 1.3-2-1.3-2 1.3-2-1.3-2 1.3z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9 8h6M9 11.5h6M9 15h3.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+  </button>
   <button class="fab fab-mic" id="fabVoz" aria-label="Cargar por voz">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <span>Voz</span>
@@ -577,6 +580,12 @@
       <p class="field-help" id="appVer">Mis Gastos</p>
       <button class="btn btn-ghost" id="btnBuscarVersion">Buscar actualizaciones</button>
     </div>
+
+    <div class="field">
+      <span class="field-label">Privacidad</span>
+      <p class="field-help">Tus datos quedan sólo en este dispositivo. No hay cuentas ni servidores.</p>
+      <a class="btn btn-ghost btn-block" id="linkPrivacidad" href="privacidad.html">Ver la política de privacidad</a>
+    </div>
   </div>
 </section>
 
@@ -758,6 +767,38 @@
   </div>
 </section>
 
+<!-- ===================== HOJA: TICKET ===================== -->
+<div class="sheet-backdrop" id="sheetTicketBack" hidden></div>
+<section class="sheet" id="sheetTicket" hidden aria-modal="true" role="dialog" aria-labelledby="sheetTicketTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetTicketTitle">Escanear un ticket</h2>
+    <button class="icon-btn" id="sheetTicketClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div id="ticketElegir">
+      <ul class="ticket-tips">
+        <li>El ticket <strong>entero</strong>, derecho y con buena luz.</li>
+        <li>Si tiene el <strong>código QR</strong> de la factura, que se vea nítido: es la lectura más precisa.</li>
+        <li>Antes de guardar vas a poder revisar y corregir todo.</li>
+      </ul>
+      <div class="sheet-actions">
+        <button class="btn btn-primary btn-grow" id="btnTicketFoto">Sacar foto</button>
+        <button class="btn btn-ghost btn-grow" id="btnTicketGaleria">Elegir de la galería</button>
+      </div>
+      <input type="file" id="fileTicketFoto" accept="image/*" capture="environment" hidden>
+      <input type="file" id="fileTicketGaleria" accept="image/*" hidden>
+    </div>
+    <div class="ticket-leyendo" id="ticketLeyendo" hidden aria-live="polite">
+      <div class="ticket-barra"><span id="ticketBarra"></span></div>
+      <p class="ticket-estado" id="ticketEstado">Leyendo el ticket…</p>
+    </div>
+    <p class="field-help ticket-privado">La foto se lee en tu teléfono y no se guarda ni se envía a ningún lado.</p>
+  </div>
+</section>
+
 <!-- ===================== HOJA: PREMIUM ===================== -->
 <div class="sheet-backdrop" id="sheetProBack" hidden></div>
 <section class="sheet sheet-pro" id="sheetPro" hidden aria-modal="true" role="dialog" aria-labelledby="sheetProTitle">
@@ -776,6 +817,7 @@
 
     <ul class="pro-lista">
       <li><strong>Movimientos fijos</strong>: el alquiler, el sueldo y las cuotas se cargan solos todos los meses</li>
+      <li><strong>Escanear tickets</strong>: le sacás una foto y se carga el gasto, leyendo el QR de la factura o el texto</li>
       <li><strong>Presupuestos por categoría</strong>, con aviso cuando te pasás</li>
       <li><strong>Comparar con meses anteriores</strong> y ver en qué se te fue la plata</li>
       <li><strong>Buscar en todo el historial</strong>, por categoría, monto o período</li>
@@ -836,6 +878,7 @@
 <script src="share.js"></script>
 <script src="local-notifications.js"></script>
 <script src="licencia.js"></script>
+<script src="ticket.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

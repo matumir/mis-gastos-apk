@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.1';
+const APP_VER = '2.2';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -294,6 +294,144 @@ function saldoAlCierre(ym) {
   return db.movimientos.reduce((s, m) =>
     (m.tipo === 'ahorro' && cajaPorId(m.cajaId) && m.fecha < limite)
       ? s + m.monto * signoAhorro(m) : s, 0);
+}
+
+/* ---------------------------------------------------------
+   Escáner de tickets (Premium)
+
+   El trabajo pesado está en ticket.js. Acá sólo se arma el flujo:
+   foto → lectura → hoja de movimiento prellenada para confirmar.
+   Nunca se guarda nada sin que la persona toque «Guardar».
+   --------------------------------------------------------- */
+const CLAVE_COMERCIOS = 'misgastos.comercios';
+let ticketOcupado = false;
+
+/* La segunda vez que escaneás un ticket del mismo comercio ya sabe en qué
+   categoría lo pusiste y cómo lo llamaste. Se guarda aparte de los datos
+   principales: es una ayuda, no información tuya que haya que respaldar. */
+function comerciosRecordados() {
+  try { return JSON.parse(localStorage.getItem(CLAVE_COMERCIOS)) || {}; } catch (e) { return {}; }
+}
+function recordarComercio(clave, categoriaId, descripcion) {
+  try {
+    const m = comerciosRecordados();
+    m[clave] = { categoriaId, descripcion: (descripcion || '').slice(0, 80) };
+    const claves = Object.keys(m);
+    if (claves.length > 300) delete m[claves[0]];
+    localStorage.setItem(CLAVE_COMERCIOS, JSON.stringify(m));
+  } catch (e) { /* sin almacenamiento: no pasa nada */ }
+}
+
+/** Categoría de egreso más probable mirando el comercio y el texto. */
+function sugerirCategoriaTicket(comercio, texto) {
+  const cats = catsDe('egreso');
+  const buscar = (str, minLargo) => {
+    const t = ' ' + normalizar(str) + ' ';
+    let mejor = null, largo = 0;
+    for (const c of cats) {
+      for (const cand of [normalizar(c.nombre), ...(c.claves || []).map(normalizar)]) {
+        if (!cand || cand.length < minLargo) continue;
+        if (t.includes(' ' + cand + ' ') && cand.length > largo) { largo = cand.length; mejor = c.id; }
+      }
+    }
+    return mejor;
+  };
+  // Primero el encabezado (nombre del comercio); el cuerpo del ticket tiene
+  // productos que confunden ("agua", "gas"…), así que ahí sólo cuentan
+  // las palabras largas.
+  const cabecera = [comercio, ...(texto || '').split('\n').slice(0, 6)].join(' ');
+  return buscar(cabecera, 3) || buscar(texto || '', 5) ||
+    (cats.find(c => normalizar(c.nombre) === 'otros') || {}).id || null;
+}
+
+function abrirTicket() {
+  if (!puede('escaner')) { abrirPremium('escaner'); return; }
+  if (ticketOcupado) { abrirHoja('sheetTicket'); return; }
+  $('#ticketElegir').hidden = false;
+  $('#ticketLeyendo').hidden = true;
+  abrirHoja('sheetTicket');
+}
+
+function cerrarTicket() {
+  // Si está leyendo, la lectura sigue y al terminar abre la confirmación;
+  // cerrar la hoja no la cancela (Tesseract no se puede cortar a mitad).
+  cerrarHoja('sheetTicket');
+}
+
+function estadoTicket(etapa, frac) {
+  const txt = {
+    qr: 'Buscando el código QR de la factura…',
+    preparando: 'Preparando el lector… (la primera vez tarda un poco más)',
+    leyendo: 'Leyendo el texto del ticket…',
+    otra: 'No se ve del todo claro. Probando de otra forma…'
+  }[etapa] || 'Leyendo el ticket…';
+  $('#ticketEstado').textContent = txt;
+  const base = etapa === 'qr' ? 0.05 : etapa === 'preparando' ? 0.1 + 0.2 * (frac || 0)
+    : etapa === 'otra' ? 0.65 + 0.35 * (frac || 0) : 0.3 + 0.35 * (frac || 0);
+  $('#ticketBarra').style.width = Math.round(base * 100) + '%';
+}
+
+async function procesarTicket(archivo) {
+  if (ticketOcupado) return;
+  ticketOcupado = true;
+  $('#ticketElegir').hidden = true;
+  $('#ticketLeyendo').hidden = false;
+  estadoTicket('qr', 0);
+
+  let r;
+  try {
+    r = await Ticket.escanear(archivo, estadoTicket);
+  } catch (e) {
+    console.warn('ticket', e);
+    ticketOcupado = false;
+    $('#ticketElegir').hidden = false;
+    $('#ticketLeyendo').hidden = true;
+    avisar(navigator.onLine === false
+      ? 'Para la primera lectura hace falta internet: se baja el lector una sola vez.'
+      : 'No pude leer esa imagen. Probá con otra foto.');
+    return;
+  }
+  ticketOcupado = false;
+  cerrarHoja('sheetTicket');
+  abrirMov(null, prefillDeTicket(r));
+}
+
+function prefillDeTicket(r) {
+  const recordados = comerciosRecordados();
+  const clave = r.cuit ? 'cuit:' + r.cuit : r.comercio ? 'nom:' + normalizar(r.comercio) : '';
+  const previo = clave ? recordados[clave] : null;
+  const catOk = previo && db.categorias.some(c => c.id === previo.categoriaId && c.tipo === 'egreso');
+
+  const descripcion = previo && previo.descripcion ? previo.descripcion
+    : r.comercio ? r.comercio
+    : r.cuit ? `Compra (CUIT ${Ticket.cuitLegible(r.cuit)})`
+    : 'Compra con ticket';
+
+  const partes = [];
+  let revisar = false;
+  if (r.origen === 'qr') {
+    partes.push('Leído del QR de la factura.');
+    if (r.enOtraMoneda) partes.push(`Era en ${r.enOtraMoneda.moneda}: está pasado a pesos con la cotización de la factura.`);
+    if (r.notaCredito) { partes.push('Ojo: es una nota de crédito (una devolución).'); revisar = true; }
+  } else if (r.monto == null) {
+    partes.push('No encontré el total: completalo a mano.'); revisar = true;
+  } else if (r.confianza === 'alta') {
+    partes.push('Leído del texto del ticket. Revisá que el total sea el correcto.');
+  } else if (r.confianza === 'dudosa') {
+    partes.push('El total leído no coincide con lo pagado en el ticket: revisalo antes de guardar.'); revisar = true;
+  } else {
+    partes.push('No vi la palabra TOTAL: puse el monto más probable, revisalo.'); revisar = true;
+  }
+  if (!r.fecha) partes.push('No encontré la fecha: quedó la de hoy.');
+
+  return {
+    tipo: 'egreso',
+    monto: r.monto,
+    categoriaId: catOk ? previo.categoriaId : sugerirCategoriaTicket(r.comercio, r.texto),
+    descripcion,
+    fecha: r.fecha || hoyISO(),
+    ticket: { echo: partes.join(' '), revisar, clave }
+  };
 }
 
 /* ---------------------------------------------------------
@@ -1207,7 +1345,7 @@ function abrirMov(id = null, prefill = null) {
     if (m.textoVoz) echo.textContent = `«${m.textoVoz}»`;
   } else {
     $('#sheetMovTitle').textContent =
-        prefill && prefill.textoVoz ? 'Confirmá el movimiento'
+        prefill && (prefill.textoVoz || prefill.ticket) ? 'Confirmá el movimiento'
       : prefill && prefill.tipo === 'ahorro' ? (prefill.sentido === 'retiro' ? 'Sacar del ahorro' : 'Guardar en el ahorro')
       : 'Nuevo movimiento';
     $('#btnBorrarMov').hidden = true;
@@ -1220,7 +1358,14 @@ function abrirMov(id = null, prefill = null) {
     $('#fFecha').value = prefill ? prefill.fecha : hoyISO();
     echo.hidden = !(prefill && prefill.textoVoz);
     if (prefill && prefill.textoVoz) echo.textContent = `«${prefill.textoVoz}»`;
+    if (prefill && prefill.ticket) {
+      echo.hidden = false;
+      echo.textContent = prefill.ticket.echo;
+    }
   }
+  echo.classList.toggle('is-ticket', !!(prefill && prefill.ticket));
+  echo.classList.toggle('is-revisar', !!(prefill && prefill.ticket && prefill.ticket.revisar));
+  $('#sheetMov').dataset.ticket = !id && prefill && prefill.ticket ? prefill.ticket.clave || '-' : '';
   $('#fFecha').max = hoyISO();   // se fija en cada apertura por si cambió el día
   $('#sheetMov').dataset.voz = prefill && prefill.textoVoz ? prefill.textoVoz : '';
   abrirHoja('sheetMov');
@@ -1282,6 +1427,9 @@ function guardarMov() {
     db.movimientos.push({ id: uid(), ...campos, creado: new Date().toISOString(), porVoz: !!textoVoz, textoVoz });
   }
   guardar();
+  const claveTicket = $('#sheetMov').dataset.ticket;
+  if (claveTicket && claveTicket !== '-' && !esAhorro) recordarComercio(claveTicket, borradorCatId, campos.descripcion);
+  $('#sheetMov').dataset.ticket = '';
   mesSel = mesDeISO(fecha);
   grupoActivo = null;
   cerrarHoja('sheetMov');
@@ -2483,6 +2631,18 @@ function conectar() {
 
   $('#fabAdd').addEventListener('click', () => abrirMov(null));
   $('#fabVoz').addEventListener('click', abrirVoz);
+  $('#fabTicket').addEventListener('click', abrirTicket);
+
+  // hoja ticket
+  $('#sheetTicketClose').addEventListener('click', cerrarTicket);
+  $('#sheetTicketBack').addEventListener('click', cerrarTicket);
+  $('#btnTicketFoto').addEventListener('click', () => $('#fileTicketFoto').click());
+  $('#btnTicketGaleria').addEventListener('click', () => $('#fileTicketGaleria').click());
+  ['#fileTicketFoto', '#fileTicketGaleria'].forEach(sel => $(sel).addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) procesarTicket(f);
+  }));
 
   // hoja movimiento
   $('#sheetMovClose').addEventListener('click', () => { cerrarHoja('sheetMov'); editandoMov = null; });
@@ -2564,6 +2724,7 @@ function conectar() {
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
     ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetFiltros'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
+    if (!$('#sheetTicket').hidden) cerrarTicket();
   });
 
   // re-dibujar el gráfico al cambiar el ancho
@@ -3720,8 +3881,9 @@ function conectarAvisos() {
    tiene sentido que miles de teléfonos golpeen una dirección que no
    existe, y en la pantalla de Ajustes se avisa que falta ponerla.
 
-   Ejemplo: 'https://misgastos.netlify.app/version.json' */
-const URL_VERSION = '';
+   Apunta al version.json del repositorio de GitHub (rama main). Si el
+   repositorio cambia de nombre o de rama, corregí esta línea. */
+const URL_VERSION = 'https://raw.githubusercontent.com/matumir/mis-gastos-apk/main/version.json';
 
 const HORAS_ENTRE_CHEQUEOS = 24;
 
@@ -3796,7 +3958,7 @@ function posponerVersion() {
 
 function conectarVersion() {
   const b = $('#btnBuscarVersion');
-  if (b) b.hidden = !URL_VERSION;
+  if (b) b.hidden = !URL_VERSION || !esNativo;
   $('#avisoVersionNo').addEventListener('click', posponerVersion);
   $('#btnBuscarVersion').addEventListener('click', () => buscarActualizacion({ aMano: true }));
 }
@@ -3956,6 +4118,7 @@ function pintarAccesosPro() {
   marcarAccesoPro('#accesoComp', 'comparar');
   marcarAccesoPro('#accesoFijos', 'fijos');
   marcarAccesoPro('#accesoFiltros', 'filtros');
+  marcarAccesoPro('#fabTicket', 'escaner');
 }
 
 function pintarPlan() {
@@ -4001,7 +4164,8 @@ const MOTIVOS = {
   presupuestos: () => 'Ponele un tope mensual a cada categoría y que la app te avise cuando te pasás.',
   metas:      () => 'Ponele una meta a cada caja de ahorro y mirá cuánto te falta y en cuántos meses llegás.',
   comparar:   () => 'Mirá en qué se te fue la plata este mes comparado con los anteriores, categoría por categoría.',
-  filtros:    () => 'Buscá en todo tu historial, no sólo en el mes que estás viendo: por categoría, por monto o por período.'
+  filtros:    () => 'Buscá en todo tu historial, no sólo en el mes que estás viendo: por categoría, por monto o por período.',
+  escaner:    () => 'Sacale una foto al ticket y el gasto se carga solo: lee el QR de la factura o, si no tiene, el texto. Todo en tu teléfono.'
 };
 
 function abrirPremium(motivo) {
@@ -4123,8 +4287,10 @@ irA('resumen');
 /* La verificación es asíncrona (Web Crypto). La app arranca en modo libre y
    se corrige en cuanto termina, unos milisegundos después. */
 iniciarLicencia();
-/* Una vez por día, en segundo plano y sin molestar si falla. */
-buscarActualizacion();
+/* Una vez por día, en segundo plano y sin molestar si falla. Sólo en el
+   APK: la versión web se actualiza sola (service worker), y mostrarle a
+   alguien con iPhone un botón para bajar un APK no tiene sentido. */
+if (esNativo) buscarActualizacion();
 /* Los recordatorios: en el APK se piden al primer arranque. */
 iniciarAvisos();
 // el ancho real recién está disponible después del primer pintado

@@ -436,6 +436,22 @@ tbody tr:last-child td { border-bottom: 0; }
   background: var(--ink); color: var(--page);
 }
 .fab-add:active { opacity: .85; }
+.fab-ticket {
+  width: 52px; height: 52px;
+  background: var(--surface-1); color: var(--ink);
+  border: 1.5px solid var(--hairline-strong);
+}
+.fab-ticket:active { background: var(--wash); }
+.fab-ticket svg { fill: none; }
+/* Sin Premium: dorado y flotando, como el resto de lo que es Premium. */
+.fab-ticket.es-pro {
+  border-color: var(--gold);
+  color: var(--gold-text);
+  background: color-mix(in srgb, var(--gold) 10%, var(--surface-1));
+  animation: flotar 2.8s ease-in-out infinite;
+  animation-delay: .3s;
+  will-change: transform;
+}
 .fab-add svg { width: 26px; height: 26px; fill: none; stroke: currentColor; }
 
 /* ---------------- nav inferior ---------------- */
@@ -1285,7 +1301,7 @@ a.btn { text-decoration: none; }
 /* Nada de esto se mueve si la persona pidió menos animación: puede ser
    por mareo o por batería, y en los dos casos manda ella. */
 @media (prefers-reduced-motion: reduce) {
-  .acceso.es-pro, .pill-pro, .aviso-pro { animation: none; }
+  .acceso.es-pro, .pill-pro, .aviso-pro, .fab-ticket.es-pro { animation: none; }
 }
 
 /* =========================================================
@@ -1469,3 +1485,26 @@ a.btn { text-decoration: none; }
    no heredan el espaciado de la hoja. */
 #cajaMetas { display: grid; gap: 18px; }
 #metaResumen { display: grid; }
+
+/* =========================================================
+   Escáner de tickets
+   ========================================================= */
+.ticket-tips {
+  margin: 0 0 16px; padding-left: 1.15rem;
+  color: var(--ink-2, var(--ink)); font-size: 0.93rem; line-height: 1.5;
+}
+.ticket-tips li { margin: 4px 0; }
+.ticket-leyendo { padding: 10px 0 6px; }
+.ticket-barra {
+  height: 6px; border-radius: 999px; overflow: hidden;
+  background: var(--wash);
+}
+.ticket-barra span {
+  display: block; height: 100%; width: 0%;
+  background: var(--ink); border-radius: inherit;
+  transition: width .25s ease;
+}
+.ticket-estado { margin: 10px 0 0; font-size: 0.93rem; text-align: center; }
+.ticket-privado { margin-top: 14px; text-align: center; }
+.voice-echo.is-ticket { font-style: normal; }
+.voice-echo.is-revisar { color: var(--warn); }

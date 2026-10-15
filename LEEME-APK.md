@@ -192,3 +192,24 @@ Con GitHub Actions es sólo hacer `git push`: el workflow sincroniza y compila s
 El ID de aplicación es permanente una vez publicada en Play Store. Si pensás
 publicarla y preferís otro, cambialo **antes** del primer build en
 `capacitor.config.json` y corré `npx cap sync android`.
+
+---
+
+## Escáner de tickets (Premium, desde la 2.2)
+
+Botón con el ícono de ticket, al lado de «Voz». Todo se procesa en el teléfono:
+
+1. Busca el **QR de la factura electrónica** (AFIP/ARCA). Si está, el total, la fecha y el
+   CUIT salen exactos y en un segundo.
+2. Si no hay QR, **lee el texto** (Tesseract, español) y busca el TOTAL, la fecha y el
+   comercio. Si la foto no se ve clara, hace un segundo intento en blanco y negro. Si el
+   total no coincide con lo pagado (tarjeta, efectivo menos vuelto), avisa para revisar.
+3. Abre la hoja de movimiento prellenada: **nada se guarda sin tocar «Guardar»**.
+4. Recuerda la categoría y el nombre que elegiste para cada comercio (por CUIT o nombre).
+
+Las librerías están en `www/vendor/` (~11 MB, dentro del APK; en la web se bajan la
+primera vez que se usa el escáner y quedan guardadas). La cámara se abre con el selector
+de archivos del sistema, así que no hace falta un permiso nuevo.
+
+Probado en navegador con tickets generados (QR, texto inclinado, poco contraste, borroso).
+**Falta probarlo con tickets térmicos reales en un teléfono**: es lo primero a revisar.

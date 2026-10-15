@@ -7,8 +7,8 @@ android {
         applicationId "com.misgastos.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 11
-        versionName "2.1"
+        versionCode 12
+        versionName "2.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,22 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Firma de release: sólo se activa si el workflow pasa la clave por variables
+    // de entorno (secretos del repositorio). Sin ellas, assembleRelease no firma.
+    signingConfigs {
+        release {
+            def ks = System.getenv('MG_KEYSTORE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('MG_STORE_PASS')
+                keyAlias System.getenv('MG_KEY_ALIAS')
+                keyPassword System.getenv('MG_KEY_PASS')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (System.getenv('MG_KEYSTORE')) { signingConfig signingConfigs.release }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
