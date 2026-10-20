@@ -1,5 +1,5 @@
 {
-  "version": "2.2",
+  "version": "2.3",
   "apk": "https://github.com/matumir/mis-gastos-apk/releases/latest/download/mis-gastos.apk",
-  "nota": "Escáner de tickets (Premium), política de privacidad y mejoras."
+  "nota": "Resumen del mes, cuotas en los fijos, sonidos, recordatorio diario y mejor lectura de tickets."
 }

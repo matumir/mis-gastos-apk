@@ -50,6 +50,15 @@
       </div>
     </div>
 
+    <button class="acceso acceso-resumen" id="accesoResumenMes" hidden>
+      <span class="acceso-ico" aria-hidden="true">✨</span>
+      <span class="acceso-txt">
+        <span class="acceso-name" id="accesoResumenMesNombre">Tu resumen del mes</span>
+        <span class="acceso-sub">Cuánto entró, cuánto salió y en qué se fue</span>
+      </span>
+      <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
     <div class="notice" id="avisoVersion" hidden>
       <p class="notice-title">Hay una versión nueva</p>
       <p class="notice-text" id="avisoVersionTexto">—</p>
@@ -550,6 +559,14 @@
       </div>
     </div>
 
+    <div class="field">
+      <label class="check-row">
+        <input type="checkbox" id="sonidosSwitch" checked>
+        <span class="field-label">Sonidos</span>
+      </label>
+      <p class="field-help">Un sonido corto al tocar, guardar, borrar o equivocarte.</p>
+    </div>
+
     <div class="field" id="filaAvisos" hidden>
       <label class="check-row">
         <input type="checkbox" id="avisosSwitch">
@@ -579,6 +596,12 @@
       <span class="field-label">Versión</span>
       <p class="field-help" id="appVer">Mis Gastos</p>
       <button class="btn btn-ghost" id="btnBuscarVersion">Buscar actualizaciones</button>
+    </div>
+
+    <div class="field" id="filaAdmin" hidden>
+      <span class="field-label">Administrador</span>
+      <p class="field-help">Herramientas de prueba para el dueño de la app.</p>
+      <button class="btn btn-ghost btn-block" id="btnAdmin">Abrir panel de administrador</button>
     </div>
 
     <div class="field">
@@ -753,6 +776,24 @@
       <p class="field-help">Si ponés 31, en los meses más cortos se carga el último día.</p>
     </label>
 
+    <div class="field">
+      <span class="field-label">Plazo</span>
+      <div class="seg" role="group" aria-label="Plazo del movimiento fijo">
+        <button class="seg-btn is-on" data-plazo="sinfin">Sin fin</button>
+        <button class="seg-btn" data-plazo="meses">Por meses</button>
+        <button class="seg-btn" data-plazo="hasta">Hasta un mes</button>
+      </div>
+      <div class="plazo-extra" id="plazoMesesFila" hidden>
+        <input type="number" id="fijoMeses" min="1" max="360" step="1" inputmode="numeric" value="12" aria-label="Cantidad de meses">
+        <span>meses</span>
+      </div>
+      <div class="plazo-extra" id="plazoHastaFila" hidden>
+        <span>Último mes:</span>
+        <input type="month" id="fijoHasta" aria-label="Último mes en que se carga">
+      </div>
+      <p class="field-help" id="plazoAyuda">Se carga todos los meses hasta que lo pauses o lo elimines.</p>
+    </div>
+
     <label class="field check-row" id="filaFijoActivo" hidden>
       <input type="checkbox" id="fijoActivo" checked>
       <span class="field-label">Activo</span>
@@ -796,6 +837,71 @@
       <p class="ticket-estado" id="ticketEstado">Leyendo el ticket…</p>
     </div>
     <p class="field-help ticket-privado">La foto se lee en tu teléfono y no se guarda ni se envía a ningún lado.</p>
+  </div>
+</section>
+
+<!-- ===================== HOJA: RESUMEN DEL MES ===================== -->
+<div class="sheet-backdrop" id="sheetResumenBack" hidden></div>
+<section class="sheet sheet-resumen" id="sheetResumen" hidden aria-modal="true" role="dialog" aria-labelledby="rmTitulo">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="rmTitulo">Resumen del mes</h2>
+    <button class="icon-btn" id="sheetResumenClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  </div>
+  <div class="rm-pista" id="rmPista" tabindex="0" aria-roledescription="carrusel"></div>
+  <div class="rm-pie">
+    <button class="btn btn-ghost" id="rmAnterior" aria-label="Anterior">‹</button>
+    <div class="rm-puntos" id="rmPuntos"></div>
+    <button class="btn btn-primary" id="rmSiguiente">Siguiente</button>
+  </div>
+</section>
+
+<!-- ===================== HOJA: ADMINISTRADOR ===================== -->
+<div class="sheet-backdrop" id="sheetAdminBack" hidden></div>
+<section class="sheet" id="sheetAdmin" hidden aria-modal="true" role="dialog" aria-labelledby="sheetAdminTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetAdminTitle">🛠️ Administrador</h2>
+    <button class="icon-btn" id="sheetAdminClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  </div>
+  <div class="sheet-body">
+    <p class="admin-info" id="adminInfo"></p>
+
+    <div class="field">
+      <span class="field-label">Notificaciones</span>
+      <div class="admin-grid">
+        <button class="btn btn-ghost" data-admin="notif-una">Recordatorio de prueba</button>
+        <button class="btn btn-ghost" data-admin="notif-todas">Las 5 variaciones</button>
+        <button class="btn btn-ghost" data-admin="notif-resumen">Aviso del resumen</button>
+        <button class="btn btn-ghost" data-admin="notif-ver">Ver programadas</button>
+        <button class="btn btn-ghost" data-admin="notif-reprogramar">Reprogramar</button>
+        <button class="btn btn-ghost" data-admin="notif-permiso">Pedir permiso otra vez</button>
+      </div>
+      <p class="field-help">Llegan a los pocos segundos. Salí de la app para verlas como las ve un usuario.</p>
+    </div>
+
+    <div class="field">
+      <span class="field-label">Pantallas y avisos</span>
+      <div class="admin-grid">
+        <button class="btn btn-ghost" data-admin="resumen-mes">Resumen del mes</button>
+        <button class="btn btn-ghost" data-admin="primer-dia">Simular día 1</button>
+        <button class="btn btn-ghost" data-admin="version">Simular versión nueva</button>
+        <button class="btn btn-ghost" data-admin="version-limpiar">Quitar aviso de versión</button>
+        <button class="btn btn-ghost" data-admin="copia">Aviso de copia</button>
+        <button class="btn btn-ghost" data-admin="fijos">Correr fijos ahora</button>
+        <button class="btn btn-ghost" data-admin="sonidos">Probar sonidos</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="check-row">
+        <input type="checkbox" id="adminGratis">
+        <span class="field-label">Ver la app como plan Gratis</span>
+      </label>
+      <p class="field-help">Para revisar la versión gratis sin quitar tu licencia. No cambia tus datos.</p>
+    </div>
+
+    <button class="btn btn-danger-ghost btn-block" data-admin="salir">Salir del modo administrador</button>
   </div>
 </section>
 
@@ -879,6 +985,9 @@
 <script src="local-notifications.js"></script>
 <script src="licencia.js"></script>
 <script src="ticket.js"></script>
+<script src="sonidos.js"></script>
+<script src="resumen-mes.js"></script>
+<script src="admin.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

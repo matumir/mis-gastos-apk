@@ -15,7 +15,7 @@
       de que el usuario quede clavado en una versión vieja para siempre.
    ========================================================= */
 
-const VERSION = '2.2';
+const VERSION = '2.3';
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium
@@ -37,6 +37,9 @@ const ARCHIVOS = [
   './local-notifications.js',
   './licencia.js',
   './ticket.js',
+  './sonidos.js',
+  './resumen-mes.js',
+  './admin.js',
   './privacidad.html',
   './manifest.webmanifest',
   './icons/icon-192.png',

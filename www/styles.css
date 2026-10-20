@@ -1508,3 +1508,134 @@ a.btn { text-decoration: none; }
 .ticket-privado { margin-top: 14px; text-align: center; }
 .voice-echo.is-ticket { font-style: normal; }
 .voice-echo.is-revisar { color: var(--warn); }
+
+/* Plazo de los movimientos fijos */
+.plazo-extra {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; font-size: 0.95rem; color: var(--ink-2);
+}
+.plazo-extra[hidden] { display: none; }
+.plazo-extra input { flex: 1; min-width: 0; }
+#fijoMeses, #fijoHasta {
+  padding: 11px 12px;
+  border-radius: var(--radius-in); border: 1px solid var(--hairline-strong);
+  background: var(--surface-1); color: var(--ink); font-size: 0.95rem;
+  -webkit-appearance: none; appearance: none;
+}
+#fijoMeses { max-width: 110px; }
+.fijoitem.is-terminado { opacity: .55; }
+
+/* =========================================================
+   Resumen del mes: diapositivas
+   Un carrusel con scroll-snap: se desliza con el dedo como cualquier
+   carrusel del sistema, y los botones y los puntos hacen lo mismo.
+   ========================================================= */
+.sheet-resumen { height: 88vh; border-top: 2px solid var(--gold); }
+.rm-pista {
+  flex: 1; min-height: 0;
+  display: flex; overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; scroll-behavior: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.rm-pista::-webkit-scrollbar { display: none; }
+.rm-pista:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.rm-slide {
+  flex: 0 0 100%; scroll-snap-align: start; scroll-snap-stop: always;
+  overflow-y: auto; padding: 12px calc(var(--gutter) + 4px) 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.rm-kicker {
+  font-size: .78rem; font-weight: 650; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--gold-text);
+}
+.rm-gigante { font-size: clamp(2.4rem, 13vw, 3.4rem); font-weight: 750; letter-spacing: -0.04em; line-height: 1; }
+.rm-gigante-num { font-size: clamp(2rem, 11vw, 2.8rem); font-weight: 750; letter-spacing: -0.03em; }
+.rm-portada { justify-content: center; text-align: center; align-items: center; }
+.rm-balance { font-size: 1.1rem; }
+.rm-balance strong { display: block; font-size: 1.9rem; letter-spacing: -0.02em; margin-top: 4px; }
+.rm-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.rm-chips span {
+  padding: 6px 12px; border-radius: 999px; font-size: .86rem;
+  background: var(--surface-1); border: 1px solid var(--hairline);
+}
+.rm-pista-txt { color: var(--ink-3, var(--ink-2)); font-size: .88rem; margin-top: 12px; }
+.rm-destacado { font-size: 1.05rem; line-height: 1.45; }
+.rm-nota { color: var(--ink-2); font-size: .93rem; line-height: 1.45; }
+.rm-sub { font-weight: 650; font-size: .9rem; margin-bottom: -6px; }
+.es-bien { color: var(--good); }
+.es-mal  { color: var(--bad); }
+
+.rm-fila-grande {
+  display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 10px;
+  padding: 14px; border-radius: 16px; background: var(--surface-1); border: 1px solid var(--hairline);
+}
+.rm-fila-grande > span:first-child { color: var(--ink-2); }
+.rm-fila-grande strong { font-size: 1.35rem; letter-spacing: -0.02em; text-align: right; }
+.rm-fila-grande .rm-var, .rm-fila-grande .rm-barra { grid-column: 1 / -1; }
+.rm-var { font-size: .82rem; font-weight: 600; color: var(--ink-2); }
+.rm-barra { height: 8px; border-radius: 99px; background: var(--wash); overflow: hidden; margin-top: 6px; }
+.rm-barra i { display: block; height: 100%; border-radius: inherit; background: var(--ink); }
+.rm-barra i.es-in { background: var(--series-in); }
+.rm-barra i.es-out { background: var(--series-out); }
+
+.rm-cats { display: grid; gap: 12px; }
+.rm-cat-linea { display: flex; justify-content: space-between; gap: 10px; font-size: .97rem; }
+.rm-cat-pct { font-size: .8rem; color: var(--ink-2); }
+
+.rm-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.rm-lista li {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--hairline);
+}
+.rm-lista small { font-weight: 500; opacity: .85; }
+
+.rm-datos { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.rm-datos li {
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px; border-radius: 14px; background: var(--surface-1); border: 1px solid var(--hairline);
+}
+.rm-datos-e { font-size: 1.4rem; width: 32px; text-align: center; flex: none; }
+.rm-datos small { display: block; color: var(--ink-2); font-size: .8rem; }
+.rm-datos strong { font-size: .98rem; font-weight: 600; }
+
+.rm-cierre { justify-content: center; }
+.rm-consejo { font-size: 1.25rem; line-height: 1.45; font-weight: 550; letter-spacing: -0.01em; }
+
+.rm-pie {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 10px var(--gutter) calc(env(safe-area-inset-bottom) + 14px);
+  border-top: 1px solid var(--hairline);
+}
+.rm-pie #rmAnterior { width: 48px; padding-left: 0; padding-right: 0; font-size: 1.4rem; }
+.rm-pie #rmAnterior:disabled { opacity: .3; }
+.rm-pie #rmSiguiente { min-width: 118px; }
+.rm-puntos { flex: 1; min-width: 0; display: flex; justify-content: center; align-items: center; gap: 6px; }
+.rm-punto {
+  width: 8px; height: 8px; border-radius: 99px; padding: 0;
+  background: var(--hairline-strong); transition: width .2s ease, background .2s ease;
+}
+.rm-punto.is-on { width: 22px; background: var(--gold); }
+
+.acceso.acceso-resumen {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--hairline));
+}
+
+/* =========================================================
+   Panel de administrador
+   ========================================================= */
+.admin-info {
+  display: grid; gap: 3px; font-size: .84rem; color: var(--ink-2);
+  padding: 12px; border-radius: 12px; background: var(--wash);
+  font-variant-numeric: tabular-nums;
+}
+.admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.admin-grid .btn { padding-left: 10px; padding-right: 10px; font-size: .88rem; }
+
+@media (max-width: 360px) {
+  .rm-puntos { gap: 4px; }
+  .rm-punto { width: 6px; height: 6px; }
+  .rm-punto.is-on { width: 14px; }
+  .rm-pie #rmSiguiente { min-width: 96px; padding-left: 14px; padding-right: 14px; }
+  .rm-pie #rmAnterior { width: 42px; }
+}

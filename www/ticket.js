@@ -158,7 +158,7 @@
   /* ---------------------------------------------------------
      Texto de OCR → total, fecha, comercio
      --------------------------------------------------------- */
-  const NO_ES_TOTAL = /sub\s*-?\s*tot|total\s*(de\s*)?(items?|art|unid|bultos|cant|desc|ahorr)|iva|impuesto|percep|descuento|ahorro|cant\.?\s*total|regimen|transparencia/i;
+  const NO_ES_TOTAL = /sub\s*-?\s*tot|total\s*(de\s*)?(items?|art|unid|bultos|cant|desc|ahorr)|iva|impuesto|percep|descuento|ahorro|cant\.?\s*total|regimen|transparencia|cup[oó]n/i;
   const ES_TOTAL = /\bt[o0]ta[l1]\b|a\s+pagar|importe\s+total|total\s+a\s+pagar/i;
   const PAGOS = /\b(efectivo|tarjeta|debito|d[eé]bito|credito|cr[eé]dito|su\s+pago|pago|mercado\s*pago|qr)\b/i;
   const CABECERA_NO = /^(tique|ticket|factura|fact\.|comprobante|original|duplicado|c\.?u\.?i\.?t|cuit|iva|ing\.?\s*br|inicio|i\.?v\.?a|responsable|consumidor|cod\.|nro|n[°º]|p\.?v\.?|punto de venta|fecha|hora|caja|cajero|domicilio|tel)/i;
@@ -169,58 +169,123 @@
       if (limpia.length < 3 || CABECERA_NO.test(limpia)) continue;
       const letras = (limpia.match(/\p{L}/gu) || []).length;
       if (letras < 3 || letras / limpia.replace(/\s/g, '').length < 0.6) continue;
+      if (!/\p{L}{4,}/u.test(limpia)) continue;      // "Era. 1" es ruido, no un nombre
       // Formato título: "SUPERMERCADO EL SOL S.A." → "Supermercado El Sol S.A."
       return limpia.toLowerCase().replace(/(^|[\s.])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()).slice(0, 60);
     }
     return '';
   }
 
+  // Encabezado de la tabla de productos ("Cant Descripción Unitario Total"):
+  // dice "Total" pero es el nombre de una columna, no el total del ticket.
+  const ENCABEZADO = /unitari|descrip|\bcant\b|\bcnt\b|precio|p\.?\s*unit|art[ií]culo|detalle/i;
+  // Dónde termina la lista de productos.
+  const FIN_ITEMS = /sub\s*-?\s*tot|\bt[o0]ta[l1]\b|importe|\biva\b|\bpago\b|tarjeta|efectivo|redondeo|a\s+pagar/i;
+
+  /** El último monto del renglón, con su signo (los descuentos vienen en negativo). */
+  function ultimoMontoConSigno(linea) {
+    let m, ult = null;
+    RE_MONTO.lastIndex = 0;
+    while ((m = RE_MONTO.exec(linea))) ult = m;
+    if (!ult) return null;
+    const v = montoDeTexto(ult[1]);
+    if (v == null) return null;
+    const antes = linea.slice(0, ult.index + ult[0].indexOf(ult[1]));
+    return /-\s*\$?\s*$/.test(antes) ? -v : v;
+  }
+
+  /** Suma de la columna de importes de los productos, o null. */
+  function sumaDeProductos(lineas) {
+    let ini = 0;
+    let finIdx = lineas.length;
+    const enc = lineas.findIndex(l => ENCABEZADO.test(l) && !montosEn(l).length);
+    if (enc >= 0) ini = enc + 1;
+    for (let k = ini; k < lineas.length; k++) {
+      if (FIN_ITEMS.test(lineas[k]) && !ENCABEZADO.test(lineas[k])) { finIdx = k; break; }
+    }
+    const vals = [];
+    for (let k = ini; k < finIdx; k++) {
+      const l = lineas[k];
+      if (!/\p{L}{2,}/u.test(l)) continue;           // un producto tiene nombre
+      const v = ultimoMontoConSigno(l);
+      if (v != null) vals.push(v);
+    }
+    if (vals.length < 2) return null;
+    const total = Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100;
+    return total > 0 ? total : null;
+  }
+
   function interpretarTexto(texto, hoy = new Date()) {
     const lineas = String(texto || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const igual = (a, b) => Math.abs(a - b) < 0.011;
+    const soloMonto = l => montosEn(l).length > 0 &&
+      l.replace(RE_MONTO, ' ').replace(/[^\p{L}]/gu, '').length <= 3;
+
+    /* Cuatro fuentes para el mismo número. Cada una se puede leer mal por
+       separado; cuando dos coinciden, el número es casi seguro. */
+
+    // T) renglones que dicen TOTAL (no subtotal, no IVA, no el encabezado
+    //    de la columna). El monto puede ir abajo sólo si el renglón dice
+    //    poco más que "TOTAL" y el de abajo es sólo un número.
+    const T = [];
+    lineas.forEach((l, i) => {
+      if (!ES_TOTAL.test(l) || NO_ES_TOTAL.test(l) || ENCABEZADO.test(l)) return;
+      let vals = montosEn(l);
+      const sig = lineas[i + 1];
+      if (!vals.length && sig && !ES_TOTAL.test(sig) && soloMonto(sig) &&
+          l.split(/\s+/).length <= 4) vals = montosEn(sig);
+      if (vals.length) T.push(vals[vals.length - 1]);
+    });
+
+    // P) lo pagado: efectivo, tarjeta, importe… y efectivo menos vuelto.
+    const P = [], vueltos = [], SUB = [];
+    lineas.forEach(l => {
+      if (ES_TOTAL.test(l) && !NO_ES_TOTAL.test(l) && !ENCABEZADO.test(l)) return;
+      if (/vuelto|cambio/i.test(l)) vueltos.push(...montosEn(l));
+      else if (PAGOS.test(l) || /\bimporte\b/i.test(l)) P.push(...montosEn(l));
+      else if (/sub\s*-?\s*tot/i.test(l)) SUB.push(...montosEn(l));
+    });
+    const PV = [...P];
+    P.forEach(p => vueltos.forEach(v => { if (v > 0 && p - v > 0) PV.push(Math.round((p - v) * 100) / 100); }));
+
+    // S) la suma de los productos, con los descuentos restando.
+    const S = sumaDeProductos(lineas);
+
+    // El subtotal y la suma de productos miden lo mismo (antes de descuentos),
+    // así que cuentan como una sola fuente: que coincidan entre sí no
+    // confirma el total a pagar.
+    const fuentes = [T, PV, [...SUB, ...(S != null ? [S] : [])]];
+    const apoyos = v => fuentes.filter(f => f.some(x => igual(x, v))).length;
+    const consenso = () => {
+      const cands = [...T, ...PV, ...(S != null ? [S] : [])].filter(v => apoyos(v) >= 2);
+      if (!cands.length) return null;
+      // Más apoyos gana; a igualdad, el que figura como TOTAL.
+      cands.sort((a, b) => apoyos(b) - apoyos(a) || (T.some(x => igual(x, b)) - T.some(x => igual(x, a))) || b - a);
+      return cands[0];
+    };
 
     let monto = null, confianza = 'baja';
+    const acuerdo = consenso();
 
-    // 1) Renglones que dicen TOTAL (y no subtotal, total de ítems, IVA…).
-    //    El monto puede estar en el mismo renglón o en el siguiente.
-    const totales = [];
-    lineas.forEach((l, i) => {
-      if (!ES_TOTAL.test(l) || NO_ES_TOTAL.test(l)) return;
-      let vals = montosEn(l);
-      if (!vals.length && lineas[i + 1] && !ES_TOTAL.test(lineas[i + 1])) vals = montosEn(lineas[i + 1]);
-      if (vals.length) totales.push(vals[vals.length - 1]);
-    });
-    if (totales.length) { monto = Math.max(...totales); confianza = 'alta'; }
-
-    // Control cruzado: el total casi siempre se repite en otro renglón
-    // (subtotal, efectivo, tarjeta). Si lo pagado no cierra con el total,
-    // lo más probable es que el OCR haya leído mal un dígito: se deja el
-    // número pero marcado para revisar.
-    if (monto != null && confianza === 'alta') {
-      const pagos = [], subtot = [], vueltos = [];
-      lineas.forEach(l => {
-        if (ES_TOTAL.test(l) && !NO_ES_TOTAL.test(l)) return;
-        if (/vuelto|cambio/i.test(l)) vueltos.push(...montosEn(l));
-        else if (PAGOS.test(l)) pagos.push(...montosEn(l));
-        else if (/sub\s*-?\s*tot/i.test(l)) subtot.push(...montosEn(l));
-      });
-      const igual = v => Math.abs(v - monto) < 0.011;
-      const cierra = pagos.some(igual) || subtot.some(igual) ||
-        pagos.some(p => vueltos.some(v => igual(p - v)));
-      // Con pagos a la vista que no cierran, desconfiar. Si sólo hay un
-      // subtotal mayor, es un descuento: normal, no se puede verificar más.
-      if (!cierra && (pagos.length || subtot.some(v => v < monto))) confianza = 'dudosa';
-    }
-
-    // 2) Sin TOTAL legible: lo que se pagó (efectivo, tarjeta…).
-    if (monto == null) {
-      const pagos = [];
-      lineas.forEach(l => { if (PAGOS.test(l) && !/vuelto|cambio/i.test(l)) pagos.push(...montosEn(l)); });
-      if (pagos.length) { monto = Math.max(...pagos); confianza = 'media'; }
-    }
-
-    // 3) Último recurso: el monto más grande del ticket. Suele ser el total,
-    //    pero puede no serlo: queda marcado para que se revise.
-    if (monto == null) {
+    if (acuerdo != null) {
+      // Dos fuentes distintas dicen lo mismo: es el total.
+      monto = acuerdo; confianza = 'alta';
+    } else if (T.length) {
+      monto = Math.max(...T);
+      confianza = 'alta';
+      // Nada lo confirma y hay pagos o suma que dicen otra cosa: un dígito
+      // mal leído. Se deja el número pero marcado para revisar. Un subtotal
+      // mayor solo es un descuento: normal, no alcanza para desconfiar.
+      if (PV.length || SUB.some(v => v < monto) || (S != null && !igual(S, monto))) confianza = 'dudosa';
+    } else if (PV.length) {
+      monto = Math.max(...P.length ? P : PV); confianza = 'media';
+    } else if (S != null) {
+      monto = S; confianza = 'media';
+    } else if (SUB.length) {
+      monto = Math.max(...SUB); confianza = 'media';
+    } else {
+      // Último recurso: el monto más grande. Suele ser el total, pero puede
+      // no serlo: queda marcado para que se revise.
       const todos = lineas.flatMap(montosEn);
       if (todos.length) { monto = Math.max(...todos); confianza = 'baja'; }
     }
@@ -276,7 +341,9 @@
       });
     }
     const w = bmp.width, h = bmp.height;
-    const esc = Math.min(1, ladoMax / Math.max(w, h));
+    // Se achica lo grande y se agranda lo chico (hasta 3×): con letras de
+    // pocos píxeles, como en una foto reenviada por WhatsApp, el OCR adivina.
+    const esc = Math.min(3, ladoMax / Math.max(w, h));
     const c = document.createElement('canvas');
     c.width = Math.round(w * esc); c.height = Math.round(h * esc);
     const ctx = c.getContext('2d', { willReadFrequently: true });

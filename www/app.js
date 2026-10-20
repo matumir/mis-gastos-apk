@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.2';
+const APP_VER = '2.3';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -393,6 +393,7 @@ async function procesarTicket(archivo) {
   }
   ticketOcupado = false;
   cerrarHoja('sheetTicket');
+  Sonido.tocar('escaneo');
   abrirMov(null, prefillDeTicket(r));
 }
 
@@ -588,6 +589,12 @@ let borradorCajaEmoji = '🏦';
    --------------------------------------------------------- */
 let toastT = null;
 function avisar(msg) {
+  /* Cada aviso suena según lo que dice, salvo que la acción ya haya
+     hecho su propio sonido recién (guardar un gasto, por ejemplo). */
+  if (window.Sonido) {
+    Sonido.sugerir(/^no |no pude|no se pudo|no hay|falta|error|sin permiso/i.test(msg) ? 'error'
+      : /eliminad|borrad|quitad|desactivad/i.test(msg) ? 'borrar' : 'exito');
+  }
   const t = $('#toast');
   t.textContent = msg;
   t.classList.remove('se-va');
@@ -707,6 +714,7 @@ function totales(ym) {
 }
 
 function renderResumen() {
+  pintarAccesoResumenMes();
   pintarAvisoVersion();
   pintarAvisoCopia();
   pintarAvisoFijos();
@@ -1427,6 +1435,7 @@ function guardarMov() {
     db.movimientos.push({ id: uid(), ...campos, creado: new Date().toISOString(), porVoz: !!textoVoz, textoVoz });
   }
   guardar();
+  Sonido.tocar(editandoMov ? 'exito' : borradorTipo);
   const claveTicket = $('#sheetMov').dataset.ticket;
   if (claveTicket && claveTicket !== '-' && !esAhorro) recordarComercio(claveTicket, borradorCatId, campos.descripcion);
   $('#sheetMov').dataset.ticket = '';
@@ -1783,6 +1792,7 @@ function abrirVoz() {
 function vozEmpezo() {
   if (grabando) return;
   grabando = true;
+  Sonido.tocar('micOn');
   yaResolvio = false;
   textoFinal = '';
   $('#micBig').classList.add('is-rec');
@@ -1792,6 +1802,7 @@ function vozEmpezo() {
 }
 
 function vozTermino() {
+  if (grabando) Sonido.tocar('micOff');
   grabando = false;
   $('#micBig').classList.remove('is-rec');
   $('#micEstado').classList.remove('is-rec');
@@ -2015,7 +2026,8 @@ function pintarAvisoCopia() {
   const d = diasSinCopia();
   const hasta = db.ajustes && db.ajustes.avisoCopiaHasta;
   const postergado = hasta && hoyISO() < hasta;
-  const mostrar = db.movimientos.length >= 15 && (d === null || d >= 30) && !postergado;
+  const mostrar = window.__adminForzarAvisoCopia ||
+    (db.movimientos.length >= 15 && (d === null || d >= 30) && !postergado);
   el.hidden = !mostrar;
   if (!mostrar) return;
   $('#avisoCopiaTexto').textContent = d === null
@@ -2027,6 +2039,7 @@ function postergarAvisoCopia() {
   const d = new Date();
   d.setDate(d.getDate() + 14);
   db.ajustes.avisoCopiaHasta = hoyISO(d);
+  window.__adminForzarAvisoCopia = false;
   guardar();
   pintarAvisoCopia();
   avisar('Listo, te lo recuerdo en dos semanas');
@@ -2193,6 +2206,7 @@ function sanearDatos(entrada) {
       dia,
       desde: esMes(f.desde) ? f.desde : mesDeISO(hoyISO()),
       hasta: esMes(f.hasta) ? f.hasta : null,
+      plazoMeses: Number.isInteger(f.plazoMeses) && f.plazoMeses > 0 && f.plazoMeses <= 360 ? f.plazoMeses : null,
       activo: f.activo !== false,
       generados: Array.isArray(f.generados) ? f.generados.filter(esMes) : [],
       creado: typeof f.creado === 'string' ? f.creado : new Date().toISOString()
@@ -2723,7 +2737,7 @@ function conectar() {
   // teclado
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetFiltros'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
+    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetFiltros', 'sheetAdmin'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
     if (!$('#sheetTicket').hidden) cerrarTicket();
   });
 
@@ -3390,6 +3404,58 @@ function mesesPendientes(fijo, hoy = hoyISO()) {
   return pendientes;
 }
 
+/* ---------------------------------------------------------
+   Plazo: sin fin, una cantidad de meses (cuotas) o hasta un mes.
+   En los dos últimos casos se guarda `hasta` (el último mes que se
+   carga); con cuotas además `plazoMeses`, para poder decir "3 de 12".
+   --------------------------------------------------------- */
+function cuotaDe(f, ym) {
+  if (!f.plazoMeses || !f.desde) return null;
+  const [a1, m1] = f.desde.split('-').map(Number), [a2, m2] = ym.split('-').map(Number);
+  return (a2 - a1) * 12 + (m2 - m1) + 1;
+}
+function descripcionDeCuota(f, ym) {
+  const base = f.descripcion || '';
+  const n = cuotaDe(f, ym);
+  if (!n || n > f.plazoMeses) return base;
+  const cuota = `cuota ${n}/${f.plazoMeses}`;
+  return base ? `${base} · ${cuota}` : cuota.charAt(0).toUpperCase() + cuota.slice(1);
+}
+function fijoTerminado(f, mesHoy = mesDeISO(hoyISO())) {
+  return !!(f.hasta && f.hasta < mesHoy);
+}
+function textoPlazo(f) {
+  const mesHoy = mesDeISO(hoyISO());
+  if (!f.hasta) return '';
+  if (fijoTerminado(f, mesHoy)) return 'terminado';
+  if (f.plazoMeses) {
+    const n = Math.max(1, Math.min(f.plazoMeses, cuotaDe(f, mesHoy) || 1));
+    return `cuota ${n} de ${f.plazoMeses}`;
+  }
+  return `hasta ${mesLegible(f.hasta)}`;
+}
+
+let borradorPlazo = 'sinfin';
+function pintarPlazo() {
+  $$('[data-plazo]').forEach(b => b.classList.toggle('is-on', b.dataset.plazo === borradorPlazo));
+  $('#plazoMesesFila').hidden = borradorPlazo !== 'meses';
+  $('#plazoHastaFila').hidden = borradorPlazo !== 'hasta';
+  const f = editandoFijo ? (db.fijos || []).find(x => x.id === editandoFijo) : null;
+  const desde = f && f.desde ? f.desde : mesDeISO(hoyISO());
+  $('#fijoHasta').min = desde;
+  const ayuda = $('#plazoAyuda');
+  if (borradorPlazo === 'sinfin') ayuda.textContent = 'Se carga todos los meses hasta que lo pauses o lo elimines.';
+  else if (borradorPlazo === 'meses') {
+    const n = parseInt($('#fijoMeses').value, 10);
+    ayuda.textContent = Number.isFinite(n) && n > 0
+      ? `Desde ${mesLegible(desde)} hasta ${mesLegible(mesSumar(desde, n - 1))}. Cada movimiento dice el número de cuota.`
+      : 'Ideal para cuotas: cada movimiento dice el número de cuota.';
+  } else {
+    const h = $('#fijoHasta').value;
+    ayuda.textContent = h ? `Se carga desde ${mesLegible(desde)} hasta ${mesLegible(h)}, inclusive.` : 'Elegí el último mes en que se carga.';
+  }
+}
+
 /**
  * Carga lo que haya pendiente de todos los fijos.
  *
@@ -3422,7 +3488,7 @@ function correrFijos() {
         categoriaId: catId,
         cajaId: null,
         sentido: null,
-        descripcion: f.descripcion || '',
+        descripcion: descripcionDeCuota(f, ym),
         fecha: fechaDelFijo(f, ym),
         creado: new Date().toISOString(),
         porVoz: false,
@@ -3503,12 +3569,14 @@ function renderFijos() {
   cont.innerHTML = `<div class="catlist">${orden.map(f => {
     const c = catPorId(f.categoriaId);
     const pausado = f.activo === false;
+    const terminado = fijoTerminado(f);
+    const plazo = textoPlazo(f);
     return `
-    <button class="fijoitem ${pausado ? 'is-pausado' : ''}" data-id="${f.id}">
+    <button class="fijoitem ${pausado ? 'is-pausado' : ''} ${terminado ? 'is-terminado' : ''}" data-id="${f.id}">
       <span class="catitem-emoji">${esc(c ? c.emoji : '🏷️')}</span>
       <span class="fijoitem-txt">
         <span class="fijoitem-name">${esc(f.descripcion || (c ? c.nombre : 'Movimiento fijo'))}</span>
-        <span class="fijoitem-sub">El ${f.dia} de cada mes · ${esc(c ? c.nombre : 'sin categoría')}${pausado ? ' · en pausa' : ''}</span>
+        <span class="fijoitem-sub">El ${f.dia} de cada mes · ${esc(c ? c.nombre : 'sin categoría')}${plazo ? ' · ' + plazo : ''}${pausado && !terminado ? ' · en pausa' : ''}</span>
       </span>
       <span class="fijoitem-monto ${f.tipo === 'ingreso' ? 'es-in' : 'es-out'}">${f.tipo === 'ingreso' ? '+' : '−'}${plata(f.monto).replace('-', '')}</span>
     </button>`;
@@ -3530,6 +3598,10 @@ function abrirFijo(id = null) {
   $('#fijoDesc').value = f ? (f.descripcion || '') : '';
   $('#fijoDia').value = f ? f.dia : 1;
   $('#fijoActivo').checked = f ? f.activo !== false : true;
+  borradorPlazo = !f || !f.hasta ? 'sinfin' : f.plazoMeses ? 'meses' : 'hasta';
+  $('#fijoMeses').value = f && f.plazoMeses ? f.plazoMeses : 12;
+  $('#fijoHasta').value = f && f.hasta ? f.hasta : '';
+  pintarPlazo();
   $('#filaFijoActivo').hidden = !f;
   $('#btnBorrarFijo').hidden = !f;
   $('#fijoError').hidden = true;
@@ -3569,12 +3641,28 @@ function guardarFijo() {
 
   if (!borradorFijoCat) { fallar('Elegí una categoría.'); return; }
 
+  const previo = editandoFijo ? (db.fijos || []).find(x => x.id === editandoFijo) : null;
+  const desde = previo && previo.desde ? previo.desde : mesDeISO(hoyISO());
+  let hasta = null, plazoMeses = null;
+  if (borradorPlazo === 'meses') {
+    const n = parseInt($('#fijoMeses').value, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 360) { fallar('La cantidad de meses tiene que estar entre 1 y 360.'); return; }
+    plazoMeses = n;
+    hasta = mesSumar(desde, n - 1);
+  } else if (borradorPlazo === 'hasta') {
+    hasta = $('#fijoHasta').value;
+    if (!/^\d{4}-\d{2}$/.test(hasta)) { fallar('Elegí hasta qué mes se carga.'); return; }
+    if (hasta < desde) { fallar(`El último mes no puede ser anterior a ${mesLegible(desde)}, cuando arranca.`); return; }
+  }
+
   const campos = {
     tipo: borradorFijoTipo,
     monto: Math.round(monto * 100) / 100,
     categoriaId: borradorFijoCat,
     descripcion: $('#fijoDesc').value.trim(),
     dia,
+    hasta,
+    plazoMeses,
     activo: $('#fijoActivo').checked
   };
 
@@ -3588,8 +3676,7 @@ function guardarFijo() {
        alquiler le aparezcan seis meses de alquileres viejos. */
     db.fijos.push({
       id: uid(), ...campos,
-      desde: mesDeISO(hoyISO()),
-      hasta: null,
+      desde,
       generados: [],
       creado: new Date().toISOString()
     });
@@ -3633,6 +3720,9 @@ function conectarFijos() {
   $('#sheetFijoBack').addEventListener('click', () => { cerrarHoja('sheetFijo'); editandoFijo = null; });
   $('#btnGuardarFijo').addEventListener('click', guardarFijo);
   $('#btnBorrarFijo').addEventListener('click', borrarFijo);
+  $$('[data-plazo]').forEach(b => b.addEventListener('click', () => { borradorPlazo = b.dataset.plazo; pintarPlazo(); }));
+  $('#fijoMeses').addEventListener('input', pintarPlazo);
+  $('#fijoHasta').addEventListener('change', pintarPlazo);
 
   $$('[data-fijotipo]').forEach(b => b.addEventListener('click', () => {
     borradorFijoTipo = b.dataset.fijotipo;
@@ -3655,17 +3745,19 @@ function conectarFijos() {
 
    Cómo funciona, que es lo que permite que ande sin servidor:
 
-   Cada vez que la persona abre la app se borran los recordatorios
-   pendientes y se vuelven a programar desde ese momento. Entonces:
-
-   · Si no abre la app en todo el día, a la noche le llega el aviso que
-     quedó programado.
-   · Si la abrió, ese aviso se corrió, y además queda uno para unas horas
-     más tarde —porque los gastos del día siguen apareciendo después de
-     que uno cargó los de la mañana.
+   · Un recordatorio por día, a las 21, SIEMPRE: haya entrado o no la
+     persona ese día. Son siete avisos que se repiten solos cada semana
+     (uno por día de la semana), así que siguen llegando aunque no abra
+     la app en meses, y sobreviven a que se reinicie el teléfono.
+   · El día 1 de cada mes, a las 10, un aviso de que está listo el
+     resumen del mes que terminó.
+   · Cada vez que se abre la app se reprograma todo, y las variaciones
+     de texto se corren de día: así no le toca siempre el mismo texto al
+     mismo día de la semana.
 
    Los textos rotan. Un recordatorio que dice siempre lo mismo se vuelve
-   invisible a la semana.
+   invisible a la semana. Tienen que servir tanto si ya cargó algo hoy
+   como si no.
 
    **Esto sólo funciona de verdad en el APK.** El navegador no puede
    despertar una página cerrada para mostrar un aviso a una hora
@@ -3675,27 +3767,20 @@ function conectarFijos() {
    ========================================================= */
 
 const HORA_RECORDATORIO = 21;     // el aviso del día, a las 21
-const HORAS_DESPUES = 6;          // el toque cuando ya entró hoy
-const DIAS_PROGRAMADOS = 14;      // hasta dónde se deja agendado
+const HORA_RESUMEN = 10;          // el del resumen, el día 1 a las 10
+const CANAL_AVISOS = 'recordatorios';
+const ICONO_NOTIF = 'ic_stat_misgastos';   // android/app/src/main/res/drawable
 
-/* Variaciones. La gracia es que no parezca un robot repitiendo. */
+/* Cinco variaciones. Valen tanto para quien ya cargó como para quien no. */
 const AVISOS_DIA = [
   { t: '¿Cómo venís hoy?',        c: 'Cargá lo que gastaste antes de que se te mezcle con mañana.' },
   { t: 'Dos minutos y listo',     c: 'Anotá los gastos del día mientras los tenés frescos.' },
   { t: 'Un repaso rápido',        c: '¿Hubo algún gasto hoy que todavía no cargaste?' },
   { t: 'Antes de que se olvide',  c: 'Lo que no se anota hoy, mañana ya no se acuerda nadie.' },
-  { t: 'Tu resumen te espera',    c: 'Cargá el día y mirá cómo viene el mes.' },
-  { t: '¿Gastaste algo hoy?',     c: 'Tocá el micrófono y decilo, es más rápido que escribirlo.' },
-  { t: 'Cerrá el día',            c: 'Un minuto ahora te ahorra media hora a fin de mes.' },
-  { t: 'No pierdas el hilo',      c: 'Llevás varios días seguidos cargando. Seguí así.' }
+  { t: 'Cerrá el día',            c: 'Un minuto ahora te ahorra media hora a fin de mes.' }
 ];
 
-const AVISOS_LUEGO = [
-  { t: '¿Algo nuevo?',            c: 'Si gastaste algo desde la última vez, cargalo ahora.' },
-  { t: 'Un ratito más',           c: '¿Quedó algún gasto del día sin anotar?' },
-  { t: 'Mientras te acordás',     c: 'Agregá lo que haya salido en estas horas.' },
-  { t: 'Para no acumular',        c: 'Cargá lo del rato y listo, no se te junta.' }
-];
+const AVISO_RESUMEN = { t: 'Tu resumen del mes está listo', c: 'Mirá cuánto entró, cuánto salió y en qué se te fue la plata el mes pasado.' };
 
 const plugNotif = () => (window.Capacitor && window.Capacitor.Plugins &&
                          window.Capacitor.Plugins.LocalNotifications) || null;
@@ -3744,31 +3829,42 @@ async function iniciarAvisos() {
 
 /* ---------- programar ---------- */
 
-const unoDe = (lista, i) => lista[Math.abs(i) % lista.length];
+/** Semana del año: corre qué variación le toca a cada día de la semana. */
+function semanaDelAnio(d) {
+  const ini = new Date(d.getFullYear(), 0, 1);
+  return Math.floor((d - ini) / (7 * 86400000));
+}
 
-/** Arma la lista de avisos que corresponden a partir de ahora. */
+/** Los avisos que se dejan programados. Todos se repiten solos. */
 function planDeAvisos(ahora = new Date()) {
   const plan = [];
-  let id = 1;
-
-  /* El toque de «unas horas más tarde»: sólo si cae en un horario
-     decente. Nadie quiere que la app lo despierte a las 4 de la mañana
-     para hablarle de la nafta. */
-  const luego = new Date(ahora.getTime() + HORAS_DESPUES * 3600e3);
-  if (luego.getHours() >= 9 && luego.getHours() <= 22) {
-    const a = unoDe(AVISOS_LUEGO, ahora.getDate());
-    plan.push({ id: id++, title: a.t, body: a.c, at: luego });
+  const corrimiento = semanaDelAnio(ahora);
+  // weekday: 1 = domingo … 7 = sábado (como Calendar.DAY_OF_WEEK de Android)
+  for (let w = 1; w <= 7; w++) {
+    const a = AVISOS_DIA[(w - 1 + corrimiento) % AVISOS_DIA.length];
+    plan.push({ id: 10 + w, title: a.t, body: a.c,
+                on: { weekday: w, hour: HORA_RECORDATORIO, minute: 0 } });
   }
-
-  /* El aviso diario de la noche, para los días que vengan. El de hoy
-     sólo si todavía no pasó la hora. */
-  for (let d = 0; d < DIAS_PROGRAMADOS; d++) {
-    const f = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + d, HORA_RECORDATORIO, 0, 0, 0);
-    if (f <= ahora) continue;
-    const a = unoDe(AVISOS_DIA, f.getDate() + d);
-    plan.push({ id: id++, title: a.t, body: a.c, at: f });
-  }
+  plan.push({ id: 30, title: AVISO_RESUMEN.t, body: AVISO_RESUMEN.c,
+              on: { day: 1, hour: HORA_RESUMEN, minute: 0 } });
   return plan;
+}
+
+/* Android 8+ manda cada notificación por un «canal», y una notificación
+   dirigida a un canal que no existe NO se muestra. Hasta la 2.2 los
+   avisos iban a un canal que nunca se creaba. */
+let canalListo = false;
+async function asegurarCanal() {
+  const P = plugNotif();
+  if (!P || canalListo || typeof P.createChannel !== 'function') return;
+  try {
+    await P.createChannel({
+      id: CANAL_AVISOS, name: 'Recordatorios',
+      description: 'El recordatorio diario y el resumen del mes',
+      importance: 4, visibility: 1, vibration: true
+    });
+    canalListo = true;
+  } catch (e) { console.warn('No pude crear el canal de avisos:', e); }
 }
 
 async function programarRecordatorios() {
@@ -3776,22 +3872,21 @@ async function programarRecordatorios() {
   if (!P || !db.ajustes.avisos) return;
 
   try {
+    await asegurarCanal();
     const pend = await P.getPending();
     if (pend && pend.notifications && pend.notifications.length) {
       await P.cancel({ notifications: pend.notifications.map(n => ({ id: n.id })) });
     }
 
     const plan = planDeAvisos();
-    if (!plan.length) return;
-
     await P.schedule({
       notifications: plan.map(n => ({
         id: n.id,
         title: n.title,
         body: n.body,
-        schedule: { at: n.at, allowWhileIdle: true },
-        smallIcon: 'ic_stat_icon_config_sample',
-        channelId: 'recordatorios'
+        schedule: { on: n.on, allowWhileIdle: true },
+        smallIcon: ICONO_NOTIF,
+        channelId: CANAL_AVISOS
       }))
     });
   } catch (e) {
@@ -3810,6 +3905,17 @@ async function apagarRecordatorios() {
   } catch (e) { /* nada que hacer */ }
 }
 
+/* ---------- sonidos ---------- */
+function conectarSonidosAjustes() {
+  const sw = $('#sonidosSwitch');
+  if (!sw) return;
+  sw.checked = Sonido.activo();
+  sw.addEventListener('change', e => {
+    Sonido.setActivo(e.target.checked);
+    if (e.target.checked) Sonido.tocar('exito');
+  });
+}
+
 /* ---------- interruptor en Ajustes ---------- */
 
 function pintarAvisosAjustes() {
@@ -3822,7 +3928,7 @@ function pintarAvisosAjustes() {
 
   $('#avisosSwitch').checked = !!db.ajustes.avisos;
   $('#avisosAyuda').textContent = db.ajustes.avisos
-    ? `Te recordamos a la noche si no entraste, y unas horas después si ya habías entrado.`
+    ? `Todos los días a las ${HORA_RECORDATORIO} te recordamos cargar los gastos, y el día 1 te avisamos que está el resumen del mes.`
     : 'Activalos y te recordamos cargar los gastos del día.';
 }
 
@@ -4027,10 +4133,22 @@ async function iniciarLicencia() {
   aplicarPlan();
 }
 
-const esPremium = () => !!plan && (plan.modo === 'activa' || plan.modo === 'gracia');
+/* El plan que manda en la práctica:
+   · «ver como Gratis» del administrador gana sobre todo (es para probar);
+   · si no, la licencia, si está vigente;
+   · si no hay licencia, el modo administrador da Premium personal. */
+const PLAN_ADMIN = { modo: 'activa', edicion: 'per', nombre: '', admin: true };
+function planEfectivo() {
+  if (Admin.forzarGratis()) return Lic.estado(null, hoyISO());
+  const vigente = !!plan && (plan.modo === 'activa' || plan.modo === 'gracia');
+  if (!vigente && Admin.activo()) return PLAN_ADMIN;
+  return plan;
+}
+
+const esPremium = () => { const p = planEfectivo(); return !!p && (p.modo === 'activa' || p.modo === 'gracia'); };
 
 /** ¿Está habilitada una función paga? La tabla vive en licencia.js. */
-const puede = func => Lic.permite(func, plan);
+const puede = func => Lic.permite(func, planEfectivo());
 
 function aplicarPlan() {
   /* Los fijos corren acá y no en el arranque porque dependen del plan, y
@@ -4052,7 +4170,7 @@ function usados(cual) {
   return catsDe(cual === 'catEgreso' ? 'egreso' : 'ingreso').length;
 }
 
-const cupoDe = cual => Lic.cupo(cual, usados(cual), plan);
+const cupoDe = cual => Lic.cupo(cual, usados(cual), planEfectivo());
 
 
 /** Portero. Devuelve true si hay que cortar porque el cupo está lleno. */
@@ -4144,10 +4262,17 @@ function pintarPlan() {
   chip.hidden = false;
   chip.textContent = 'Activa';
   chip.classList.add('is-activa');
-  det.textContent = plan.nombre
-    ? `A nombre de ${plan.nombre}. Pago único, no vence.`
-    : 'Pago único, no vence.';
+  const pe = planEfectivo();
   det.classList.remove('is-alerta');
+  if (pe.admin) {
+    det.textContent = 'Activo por el modo administrador.';
+    quitar.hidden = true;
+    activar.textContent = 'Activar licencia';
+    return;
+  }
+  det.textContent = pe.nombre
+    ? `A nombre de ${pe.nombre}. Pago único, no vence.`
+    : 'Pago único, no vence.';
   quitar.hidden = false;
   activar.textContent = 'Cambiar código';
 }
@@ -4204,6 +4329,23 @@ async function activarLicencia() {
   err.hidden = true;
   const texto = $('#licTexto').value;
 
+  /* El código de administrador se escribe en el mismo lugar. */
+  if (Admin.pareceCodigo(texto)) {
+    if (await Admin.esCodigo(texto)) {
+      Admin.activar(texto);
+      aplicarPlan();
+      cerrarHoja('sheetLic');
+      cerrarHoja('sheetPro');
+      pintarAdmin();
+      Sonido.tocar('premium');
+      avisar('Modo administrador activado, con Premium. El panel está en Ajustes.');
+    } else {
+      err.textContent = 'Ese código no es válido.';
+      err.hidden = false;
+    }
+    return;
+  }
+
   let datos;
   try {
     datos = await Lic.verificar(texto);
@@ -4239,6 +4381,7 @@ async function activarLicencia() {
   aplicarPlan();
   cerrarHoja('sheetLic');
   cerrarHoja('sheetPro');
+  Sonido.tocar('premium');
   avisar(datos.nombre ? `Premium activado: ${datos.nombre}` : 'Premium activado');
 }
 
@@ -4283,16 +4426,23 @@ conectarComparar();
 conectarFiltros();
 conectarVersion();
 conectarAvisos();
+conectarResumenMes();
+conectarAdmin();
+conectarSonidosAjustes();
 irA('resumen');
 /* La verificación es asíncrona (Web Crypto). La app arranca en modo libre y
    se corrige en cuanto termina, unos milisegundos después. */
 iniciarLicencia();
+/* El modo administrador también se verifica de nuevo en cada arranque. */
+Admin.iniciar().then(() => { aplicarPlan(); pintarAdmin(); });
 /* Una vez por día, en segundo plano y sin molestar si falla. Sólo en el
    APK: la versión web se actualiza sola (service worker), y mostrarle a
    alguien con iPhone un botón para bajar un APK no tiene sentido. */
 if (esNativo) buscarActualizacion();
 /* Los recordatorios: en el APK se piden al primer arranque. */
 iniciarAvisos();
+/* El resumen del mes anterior, en los primeros días del mes. */
+iniciarResumenMensual();
 // el ancho real recién está disponible después del primer pintado
 requestAnimationFrame(() => { if (vista === 'resumen') renderMesChart(); });
 

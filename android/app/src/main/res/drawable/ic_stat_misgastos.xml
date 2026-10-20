@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono chico de las notificaciones (barra de estado). Android lo pinta
+     de un solo color: tiene que ser blanco sobre transparente. Son las
+     tres barras del logo de Mis Gastos. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M5,13.5h3.2v6.5h-3.2z M10.4,8.5h3.2v11.5h-3.2z M15.8,4h3.2v16h-3.2z" />
+</vector>

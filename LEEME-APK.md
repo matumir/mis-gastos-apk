@@ -213,3 +213,22 @@ de archivos del sistema, así que no hace falta un permiso nuevo.
 
 Probado en navegador con tickets generados (QR, texto inclinado, poco contraste, borroso).
 **Falta probarlo con tickets térmicos reales en un teléfono**: es lo primero a revisar.
+
+---
+
+## Novedades de la BETA 2.3
+
+- **Recordatorios arreglados.** Hasta la 2.2 se mandaban a un canal de Android que
+  nunca se creaba, y en Android 8+ eso hace que no se muestren. Ahora se crea el canal
+  `recordatorios` y hay un ícono propio (`res/drawable/ic_stat_misgastos.xml`).
+- **Un recordatorio por día, siempre**, a las 21, con 5 textos que rotan. Son avisos
+  que se repiten solos cada semana: siguen llegando aunque no se abra la app y después
+  de reiniciar el teléfono. El día 1 a las 10, aviso de que está el resumen del mes.
+- **Resumen del mes en diapositivas**: aparece una vez al entrar en los primeros 7 días
+  del mes, y queda un acceso en el Resumen esos días.
+- **Plazo en los movimientos fijos**: sin fin, por cantidad de meses (dice «cuota 3/12»)
+  o hasta un mes.
+- **Sonidos** sintetizados (sin archivos). Se apagan en Ajustes → Sonidos.
+- **Modo administrador** (da Premium y un panel de pruebas; se verifica en cada arranque): el código está en la carpeta privada de licencias (`ADMIN.txt`).
+- **Tickets**: ya no confunde la columna «Total» del encabezado con el total; suma los
+  productos (con descuentos) y compara contra lo pagado.
