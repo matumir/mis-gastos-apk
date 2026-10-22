@@ -1766,6 +1766,9 @@ function moverPlataCaja(sentido) {
 const esNativo = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
                     && window.Capacitor.isNativePlatform());
 const VozNativa = esNativo && window.Capacitor.Plugins ? window.Capacitor.Plugins.SpeechRecognition : null;
+/* iPad con iPadOS se presenta como Mac: se lo reconoce por la pantalla táctil. */
+const esIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+              || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const hayVoz = !!(VozNativa || SR);
 
@@ -2397,6 +2400,24 @@ async function exportar() {
     }
     mostrarCopiaComoTexto(texto);             // último recurso: copiar y pegar
     return;
+  }
+
+  /* En iPhone, la app instalada en la pantalla de inicio no tiene dónde
+     mostrar una descarga: abre el archivo a pantalla completa y sin botón
+     para volver. El menú de compartir sí ofrece «Guardar en Archivos». */
+  if (esIOS && navigator.canShare) {
+    const archivo = new File([texto], nombreCopia(), { type: 'application/json' });
+    if (navigator.canShare({ files: [archivo] })) {
+      try {
+        await navigator.share({ files: [archivo], title: 'Copia de Mis Gastos' });
+        marcarCopiaHecha();
+        avisar('Copia guardada');
+      } catch (e) {
+        if (e && e.name === 'AbortError') avisar('No se guardó la copia. Probá de nuevo y elegí «Guardar en Archivos».');
+        else { console.warn('No pude compartir la copia:', e); mostrarCopiaComoTexto(texto); }
+      }
+      return;
+    }
   }
 
   try {
@@ -4450,6 +4471,45 @@ if ('serviceWorker' in navigator && !esNativo) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
   });
+}
+
+/* ---------- versión web: instalarla ----------
+   Hasta que salga en las tiendas, en iPhone y en la computadora se usa la
+   versión web. Importa que quede instalada: Safari borra los datos de los
+   sitios que no se abren en una semana, pero no los de las apps que están
+   en la pantalla de inicio. */
+if (!esNativo) {
+  /* Pide que el navegador no borre los datos cuando le falte espacio. */
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  let pedidoInstalar = null;   // el botón "Instalar" de Chrome/Edge
+  const instalada = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches)
+                          || navigator.standalone === true;
+  const COMPARTIR_IOS = '<svg viewBox="0 0 24 24" aria-hidden="true" style="width:1.1em;height:1.1em;vertical-align:-0.2em;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3.5v11M8 7.5l4-4 4 4M6.5 11H5.5v9h13v-9h-1"/></svg>';
+
+  const pintarInstalar = () => {
+    const fila = $('#filaInstalar'), caja = $('#instalarAyuda');
+    if (instalada()) { fila.hidden = true; return; }
+    if (esIOS) {
+      caja.innerHTML = `<p class="field-help">En Safari tocá ${COMPARTIR_IOS} <b>Compartir</b> y después <b>Agregar a pantalla de inicio</b>. Queda con su ícono, abre sin internet y Safari no borra tus datos.</p>`;
+    } else if (pedidoInstalar) {
+      caja.innerHTML = '<p class="field-help">Queda con su ícono y abre sin internet.</p><button class="btn btn-ghost btn-block" id="btnInstalar">Instalar en este dispositivo</button>';
+      $('#btnInstalar').addEventListener('click', async () => {
+        const p = pedidoInstalar;
+        if (!p) return;
+        pedidoInstalar = null;
+        p.prompt();
+        try { await p.userChoice; } catch (e) {}
+        pintarInstalar();
+      });
+    } else {
+      caja.innerHTML = '<p class="field-help">Desde el menú del navegador elegí <b>Instalar app</b> o <b>Agregar a pantalla de inicio</b>.</p>';
+    }
+    fila.hidden = false;
+  };
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); pedidoInstalar = e; pintarInstalar(); });
+  window.addEventListener('appinstalled', () => { pedidoInstalar = null; pintarInstalar(); });
+  pintarInstalar();
 }
 
 // para probar el parser desde la consola

@@ -50,8 +50,11 @@ const ARCHIVOS = [
 
 self.addEventListener('install', ev => {
   ev.waitUntil(
+    /* cache: 'reload' saltea el cache HTTP del navegador (GitHub Pages lo
+       deja 10 minutos): si no, justo después de publicar se podría guardar
+       como versión nueva un archivo viejo. */
     caches.open(CACHE)
-      .then(c => c.addAll(ARCHIVOS))
+      .then(c => c.addAll(ARCHIVOS.map(u => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
       .catch(e => console.warn('No se pudo precachear todo:', e))
   );

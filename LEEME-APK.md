@@ -88,6 +88,31 @@ usarlo vos. Para publicarlo en Play Store hace falta una clave propia y
 
 ---
 
+## En iPhone y en la computadora (versión web)
+
+iPhone no instala APKs: hasta que la app salga en las tiendas se usa la versión
+web, que se publica sola en cada `git push` (`.github/workflows/web.yml`) en
+**https://matumir.github.io/mis-gastos-apk/**.
+
+1. Abrila en **Safari**, tocá **Compartir** y después **Agregar a pantalla de inicio**.
+2. Queda con su ícono, se abre a pantalla completa y funciona sin internet.
+
+Conviene instalarla siempre: Safari borra los datos de los sitios que no se abren
+en una semana, pero no los de las apps de la pantalla de inicio. Los datos de la
+versión web quedan en ese navegador y no se comparten con el APK; para pasarlos
+se usa *Ajustes → Copia de seguridad*. En la computadora (Chrome o Edge) se instala
+con *Ajustes → Instalar la app* o desde el menú del navegador.
+
+Las versiones nuevas llegan solas: la próxima vez que se abre con internet.
+
+**Una sola vez**, después del primer push: en el repo, *Settings → Pages → Source:
+Deploy from a branch → `gh-pages` / `(root)` → Save*.
+
+- `scripts/preparar-web.mjs` — arma la versión web en `dist/` y le agrega a `VERSION`
+  de `www/sw.js` el commit publicado, así cada publicación se detecta como nueva.
+
+---
+
 ## Cómo quedó la voz
 
 El motor de voz cambia solo según dónde corra la app, con el mismo código:

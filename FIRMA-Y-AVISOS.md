@@ -81,6 +81,6 @@ el número y la nota en `version.json`. Los teléfonos con una versión menor mu
 ## 3. Política de privacidad
 
 `www/privacidad.html`, enlazada desde Ajustes → Privacidad. En la web queda en
-`tu-sitio.netlify.app/privacidad.html`.
+`https://matumir.github.io/mis-gastos-apk/privacidad.html` (sirve como enlace para las tiendas).
 Completá `[TU NOMBRE COMPLETO Y CUIT]` y `[TU EMAIL]`. Si algún día sumás contador de
 usuarios, anuncios o algo que mande datos afuera, **hay que actualizarla antes**.

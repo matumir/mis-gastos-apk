@@ -1,0 +1,40 @@
+# Publica la versión web (PWA, para iPhone y computadora) en GitHub Pages cada
+# vez que se sube a "main". Queda en https://matumir.github.io/mis-gastos-apk/
+#
+# Una sola vez, después del primer run: Settings → Pages → Source "Deploy from a
+# branch" → rama gh-pages, carpeta / (root) → Save.
+
+name: Publicar web
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-web
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Armar la versión web
+        run: node scripts/preparar-web.mjs
+
+      - name: Publicar en gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./dist
+          commit_message: "Versión web ${{ github.sha }}"

@@ -13,3 +13,6 @@ android/capacitor-cordova-android-plugins/build/
 # Nunca subir la clave de firma
 *.keystore
 *.jks
+
+# La versión web armada (scripts/preparar-web.mjs)
+dist/
