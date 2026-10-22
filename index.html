@@ -26,6 +26,7 @@
     <h1 id="viewTitle">Resumen</h1>
   </div>
   <div class="topbar-acciones">
+  <button class="moneda-chip" id="btnMoneda" hidden>ARS</button>
   <button class="pill-pro" id="btnProHeader" hidden>
     <svg viewBox="0 0 24 24" aria-hidden="true" class="pill-pro-ico"><path d="M12 3l2.2 5.3 5.8.5-4.4 3.8 1.3 5.6L12 15.3 7.1 18.2l1.3-5.6L4 8.8l5.8-.5L12 3Z"/></svg>
     Premium
@@ -547,6 +548,16 @@
     </div>
 
     <div class="field">
+      <span class="field-label">Billetera</span>
+      <span class="sello-pro" id="monedaSello" hidden>Premium</span>
+      <div class="seg" role="group" aria-label="Billetera">
+        <button class="seg-btn" data-moneda="ARS">Pesos</button>
+        <button class="seg-btn" data-moneda="USD">Dólares</button>
+      </div>
+      <p class="field-help">Cada billetera tiene sus propios movimientos, categorías, fijos y cajas de ahorro.</p>
+    </div>
+
+    <div class="field">
       <span class="field-label">Plan</span>
       <div class="plan-linea">
         <span class="plan-nombre" id="planNombre">—</span>
@@ -929,6 +940,7 @@
     <ul class="pro-lista">
       <li><strong>Movimientos fijos</strong>: el alquiler, el sueldo y las cuotas se cargan solos todos los meses</li>
       <li><strong>Escanear tickets</strong>: le sacás una foto y se carga el gasto, leyendo el QR de la factura o el texto</li>
+      <li><strong>Billetera en dólares</strong>, separada de la de pesos, con sus propios movimientos, fijos y ahorros</li>
       <li><strong>Presupuestos por categoría</strong>, con aviso cuando te pasás</li>
       <li><strong>Comparar con meses anteriores</strong> y ver en qué se te fue la plata</li>
       <li><strong>Buscar en todo el historial</strong>, por categoría, monto o período</li>

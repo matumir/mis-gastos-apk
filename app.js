@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.3';
+const APP_VER = '2.4';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -57,19 +57,29 @@ function fechaLegible(iso) {
   return base.charAt(0).toUpperCase() + base.slice(1) + (a !== hoy.getFullYear() ? ` de ${a}` : '');
 }
 
-const fmtPesos = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-const fmtPesosDec = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/* Los montos salen en la moneda de la billetera que se está viendo:
+   «$ 1.250» en pesos, «US$ 1.250» en dólares. */
+const FMT = {};
+for (const cod of ['ARS', 'USD']) {
+  FMT[cod] = {
+    ent: new Intl.NumberFormat('es-AR', { style: 'currency', currency: cod, minimumFractionDigits: 0, maximumFractionDigits: 0 }),
+    dec: new Intl.NumberFormat('es-AR', { style: 'currency', currency: cod, minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  };
+}
 
 function plata(n) {
   const v = Number(n) || 0;
-  return Number.isInteger(v) ? fmtPesos.format(v) : fmtPesosDec.format(v);
+  const f = FMT[moneda()];
+  return Number.isInteger(v) ? f.ent.format(v) : f.dec.format(v);
 }
-function plataCorta(n) {
+/** `conSimbolo` en false es para los ejes de los gráficos. */
+function plataCorta(n, conSimbolo = true) {
   const v = Math.abs(Number(n) || 0);
   const signo = n < 0 ? '-' : '';
-  if (v >= 1e6) return `${signo}$${(v / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 })} M`;
-  if (v >= 1e3) return `${signo}$${(v / 1e3).toLocaleString('es-AR', { maximumFractionDigits: v >= 1e5 ? 0 : 1 })} mil`;
-  return `${signo}$${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+  const s = signo + (conSimbolo ? MONEDAS[moneda()].simbolo : '');
+  if (v >= 1e6) return `${s}${(v / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 })} M`;
+  if (v >= 1e3) return `${s}${(v / 1e3).toLocaleString('es-AR', { maximumFractionDigits: v >= 1e5 ? 0 : 1 })} mil`;
+  return `${s}${v.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 }
 const esc = s => (s || '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -233,26 +243,122 @@ function datosIniciales() {
   };
 }
 
+/* ---------------------------------------------------------
+   Billeteras (la de dólares es Premium)
+
+   Cada moneda tiene su billetera con todo separado: categorías, cajas,
+   movimientos y fijos. `db.categorias`, `db.cajas`, `db.movimientos` y
+   `db.fijos` apuntan siempre a la billetera que se está viendo, así el
+   resto de la app no necesita saber que hay más de una.
+
+   Se guarda con la forma de siempre —la billetera en pesos arriba de
+   todo— y la de dólares aparte, en `billeteras.USD`. Así lo que ya estaba
+   guardado no se toca y una versión anterior de la app lee los pesos sin
+   enterarse de que hay otra billetera.
+   --------------------------------------------------------- */
+const MONEDAS = {
+  ARS: { nombre: 'pesos',   simbolo: '$' },
+  USD: { nombre: 'dólares', simbolo: 'US$' }
+};
+const CAMPOS_BILLETERA = ['categorias', 'cajas', 'movimientos', 'fijos'];
+
+const monedaDe = d => (d.billeteras[d.ajustes.moneda] ? d.ajustes.moneda : 'ARS');
+const moneda = () => monedaDe(db);
+
+/** De la forma guardada a la de trabajo. */
+function enMemoria(g) {
+  const d = { version: 2, ajustes: g.ajustes || { tema: 'auto' }, billeteras: {} };
+  const billetera = b => ({
+    categorias: b.categorias,
+    cajas: Array.isArray(b.cajas) ? b.cajas : cajasNuevas(),   // datos de la v1
+    movimientos: b.movimientos,
+    fijos: Array.isArray(b.fijos) ? b.fijos : []              // datos previos a los fijos
+  });
+  d.billeteras.ARS = billetera(g);
+  const usd = g.billeteras && g.billeteras.USD;
+  if (usd && Array.isArray(usd.categorias) && Array.isArray(usd.movimientos)) d.billeteras.USD = billetera(usd);
+  for (const k of CAMPOS_BILLETERA) {
+    Object.defineProperty(d, k, {
+      get() { return this.billeteras[monedaDe(this)][k]; },
+      set(v) { this.billeteras[monedaDe(this)][k] = v; }
+    });
+  }
+  return d;
+}
+
+/** De la forma de trabajo a la guardada (también es la de las copias). */
+function paraGuardar(d) {
+  const g = { version: 2, ...d.billeteras.ARS, ajustes: d.ajustes };
+  if (d.billeteras.USD) g.billeteras = { USD: d.billeteras.USD };
+  return g;
+}
+
 let db;
 function cargar() {
   try {
     const raw = localStorage.getItem(CLAVE);
-    if (!raw) return datosIniciales();
+    if (!raw) return enMemoria(datosIniciales());
     const d = JSON.parse(raw);
-    if (!d || !Array.isArray(d.categorias) || !Array.isArray(d.movimientos)) return datosIniciales();
-    d.ajustes = d.ajustes || { tema: 'auto' };
-    if (!Array.isArray(d.cajas)) d.cajas = cajasNuevas();   // datos de la v1
-    if (!Array.isArray(d.fijos)) d.fijos = [];              // datos previos a los fijos
-    d.version = 2;
-    return d;
+    if (!d || !Array.isArray(d.categorias) || !Array.isArray(d.movimientos)) return enMemoria(datosIniciales());
+    return enMemoria(d);
   } catch (e) {
     console.warn('No se pudo leer el almacenamiento:', e);
-    return datosIniciales();
+    return enMemoria(datosIniciales());
   }
 }
 function guardar() {
-  try { localStorage.setItem(CLAVE, JSON.stringify(db)); }
+  try { localStorage.setItem(CLAVE, JSON.stringify(paraGuardar(db))); }
   catch (e) { avisar('No se pudo guardar. ¿Queda espacio en el teléfono?'); console.warn(e); }
+}
+
+/** La billetera en dólares arranca con las mismas categorías que la de
+    pesos, pero sin los presupuestos: un tope en pesos no dice nada en
+    dólares. Las cajas arrancan como en una instalación nueva. */
+function crearBilleteraUSD() {
+  db.billeteras.USD = {
+    categorias: db.billeteras.ARS.categorias.map(c => ({
+      ...c, id: uid(), claves: [...(c.claves || [])], presupuesto: null
+    })),
+    cajas: cajasNuevas(),
+    movimientos: [],
+    fijos: []
+  };
+}
+
+/** Cambia la billetera que se ve. Crear la de dólares es Premium; si ya
+    existe se puede seguir usando sin Premium, como las categorías que
+    quedan por encima del tope: lo que alguien ya armó no se le saca. */
+function usarBilletera(m) {
+  if (m === moneda()) return true;
+  if (m === 'USD' && !db.billeteras.USD) {
+    if (!puede('divisas')) { abrirPremium('divisas'); return false; }
+    crearBilleteraUSD();
+  }
+  db.ajustes.moneda = m;
+  guardar();
+  // los filtros y el grupo abierto apuntan a categorías de la otra billetera
+  filtros = { periodo: 0, cats: [], montoMin: null, montoMax: null };
+  grupoActivo = null;
+  pintarMoneda();
+  pintarPlan();
+  renderTodo();
+  return true;
+}
+
+/** Símbolo en los campos de monto y botón de la cabecera. */
+function pintarMoneda() {
+  const m = moneda();
+  $$('.amount-cur').forEach(el => { el.textContent = MONEDAS[m].simbolo; });
+  const b = $('#btnMoneda');
+  if (b) {
+    b.hidden = !(db.billeteras.USD || puede('divisas'));
+    b.textContent = m;
+    b.classList.toggle('es-usd', m === 'USD');
+    b.setAttribute('aria-label', `Billetera en ${MONEDAS[m].nombre}. Tocá para cambiar.`);
+  }
+  $$('[data-moneda]').forEach(x => x.classList.toggle('is-on', x.dataset.moneda === m));
+  const sello = $('#monedaSello');
+  if (sello) sello.hidden = !!(db.billeteras.USD || puede('divisas'));
 }
 
 const catPorId   = id => db.categorias.find(c => c.id === id);
@@ -410,9 +516,17 @@ function prefillDeTicket(r) {
 
   const partes = [];
   let revisar = false;
+  let monto = r.monto;
+  /* En la billetera en dólares: una factura en dólares queda con su
+     importe original; un ticket en pesos se carga igual, pero avisando. */
+  const enDolares = moneda() === 'USD';
+  const facturaEnDolares = r.enOtraMoneda && r.enOtraMoneda.moneda === 'DOL';
   if (r.origen === 'qr') {
     partes.push('Leído del QR de la factura.');
-    if (r.enOtraMoneda) partes.push(`Era en ${r.enOtraMoneda.moneda}: está pasado a pesos con la cotización de la factura.`);
+    if (enDolares && facturaEnDolares) {
+      monto = Math.round(r.enOtraMoneda.importe * 100) / 100;
+      partes.push('La factura es en dólares: quedó el importe en dólares.');
+    } else if (r.enOtraMoneda) partes.push(`Era en ${r.enOtraMoneda.moneda}: está pasado a pesos con la cotización de la factura.`);
     if (r.notaCredito) { partes.push('Ojo: es una nota de crédito (una devolución).'); revisar = true; }
   } else if (r.monto == null) {
     partes.push('No encontré el total: completalo a mano.'); revisar = true;
@@ -424,10 +538,14 @@ function prefillDeTicket(r) {
     partes.push('No vi la palabra TOTAL: puse el monto más probable, revisalo.'); revisar = true;
   }
   if (!r.fecha) partes.push('No encontré la fecha: quedó la de hoy.');
+  if (enDolares && !facturaEnDolares && monto != null) {
+    partes.push('Ojo: el ticket parece estar en pesos y estás en la billetera en dólares.');
+    revisar = true;
+  }
 
   return {
     tipo: 'egreso',
-    monto: r.monto,
+    monto,
     categoriaId: catOk ? previo.categoriaId : sugerirCategoriaTicket(r.comercio, r.texto),
     descripcion,
     fecha: r.fecha || hoyISO(),
@@ -441,9 +559,16 @@ function prefillDeTicket(r) {
 const VERBOS_EGRESO  = ['gaste','gastar','pague','pagar','compre','comprar','abone','abonar','inverti','salio','salieron','cargue','cuesta','costo','puse','saque','retire','gasto','egreso','pagamos','compramos'];
 const VERBOS_INGRESO = ['cobre','cobrar','gane','ganar','ingrese','ingresar','recibi','recibir','vendi','vender','entro','entraron','me pagaron','deposite','depositaron','cobramos','vendimos','facture'];
 const VERBOS_AHORRO  = ['guarde','guardar','aparte','apartar','ahorre','ahorrar','separe','separar','destine','destinar','guardamos','ahorramos'];
+/* Las palabras que mandan el movimiento a una billetera. "Lucas" o "palos"
+   no cuentan: se usan igual para pesos y para dólares. */
+const PALABRAS_MONEDA = {
+  dolar: 'USD', dolares: 'USD', dolarcitos: 'USD', usd: 'USD', 'u$s': 'USD', 'us$': 'USD',
+  peso: 'ARS', pesos: 'ARS', pesitos: 'ARS', ars: 'ARS'
+};
 const RELLENO = new Set([
   'en','de','del','la','el','los','las','un','una','unos','unas','por','para','a','al','con',
   'me','se','mi','mis','y','que','lo','pesos','peso','plata','mango','mangos','sobre',
+  ...Object.keys(PALABRAS_MONEDA),
   'hoy','ayer','anteayer','antes','total','fue','fueron','son','es','mas','tambien','ahora',
   ...VERBOS_EGRESO.flatMap(v => v.split(' ')),
   ...VERBOS_INGRESO.flatMap(v => v.split(' ')),
@@ -552,7 +677,11 @@ function parsearVoz(texto) {
   let descripcion = palabras.join(' ').trim();
   if (descripcion) descripcion = descripcion.charAt(0).toUpperCase() + descripcion.slice(1);
 
-  return { tipo, monto, categoriaId, cajaId, sentido, descripcion, fecha, textoVoz: texto.trim() };
+  /* --- moneda: la que se nombre, si se nombra alguna --- */
+  const nombrada = tokens.find(t => PALABRAS_MONEDA[t]);
+
+  return { tipo, monto, categoriaId, cajaId, sentido, descripcion, fecha, textoVoz: texto.trim(),
+           moneda: nombrada ? PALABRAS_MONEDA[nombrada] : null };
 }
 
 /* ---------------------------------------------------------
@@ -857,7 +986,7 @@ function renderMesChart() {
   const ticks = [0, tope / 2, tope];
   const grid = ticks.map(v => `
     <line class="${v === 0 ? 'base-line' : 'grid-line'}" x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}"/>
-    <text class="tick" x="${padL - 7}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v === 0 ? '0' : plataCorta(v).replace('$', '')}</text>`).join('');
+    <text class="tick" x="${padL - 7}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v === 0 ? '0' : plataCorta(v, false)}</text>`).join('');
 
   const barras = datos.map((d, i) => {
     const cx = padL + bandW * i + bandW / 2;
@@ -1113,7 +1242,7 @@ function renderAhorroChart() {
   const ticks = [0, tope / 2, tope];
   const grid = ticks.map(v => `
     <line class="${v === 0 ? 'base-line' : 'grid-line'}" x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}"/>
-    <text class="tick" x="${padL - 7}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v === 0 ? '0' : plataCorta(v).replace('$', '')}</text>`).join('');
+    <text class="tick" x="${padL - 7}" y="${(y(v) + 3.5).toFixed(1)}" text-anchor="end">${v === 0 ? '0' : plataCorta(v, false)}</text>`).join('');
 
   const puntos = datos.map((d, i) => `${x(i).toFixed(1)},${y(d.saldo).toFixed(1)}`).join(' L');
   const area = `M${x(0).toFixed(1)},${base} L${puntos} L${x(datos.length - 1).toFixed(1)},${base} Z`;
@@ -1827,10 +1956,25 @@ function vozResultado() {
     $('#micEjemplos').hidden = false;
     return;
   }
-  const p = parsearVoz(dicho);
+  let p = parsearVoz(dicho);
+  const avisos = [];
+
+  /* "Gasté 50 dólares en nafta" estando en pesos va a la billetera en
+     dólares, y al revés. Se vuelve a leer la frase ya en la otra
+     billetera, porque las categorías de cada una son distintas. */
+  if (p.moneda && p.moneda !== moneda()) {
+    if (p.moneda === 'USD' && !db.billeteras.USD && !puede('divisas')) {
+      avisos.push('La billetera en dólares es Premium: lo cargo en pesos.');
+    } else if (usarBilletera(p.moneda)) {
+      p = parsearVoz(dicho);
+      avisos.push(`Va a la billetera en ${MONEDAS[p.moneda].nombre}.`);
+    }
+  }
+
   cerrarHoja('sheetVoz');
   abrirMov(null, p);
-  if (p.monto == null) avisar('No encontré el monto, completalo a mano.');
+  if (p.monto == null) avisos.push('No encontré el monto, completalo a mano.');
+  if (avisos.length) avisar(avisos.join(' '));
 }
 
 function alternarGrabacion() {
@@ -1964,7 +2108,8 @@ function abrirAjustes() {
   aplicarTema(db.ajustes.tema || 'auto');
   const nm = db.movimientos.length, nc = db.categorias.length, nj = db.cajas.length;
   const nf = (db.fijos || []).length;
-  $('#statsLinea').textContent = `${nm} movimiento${nm === 1 ? '' : 's'}, ${nc} categorías, ${nj} caja${nj === 1 ? '' : 's'} de ahorro`
+  $('#statsLinea').textContent = (db.billeteras.USD ? `Billetera en ${MONEDAS[moneda()].nombre}: ` : '')
+    + `${nm} movimiento${nm === 1 ? '' : 's'}, ${nc} categorías, ${nj} caja${nj === 1 ? '' : 's'} de ahorro`
     + (nf ? ` y ${nf} fijo${nf === 1 ? '' : 's'}` : '') + ' en este dispositivo.';
   $('#appVer').textContent = `Mis Gastos · BETA ${APP_VER}${esNativo ? ' · APK' : ''}`;
   pintarEstadoCopia();
@@ -1983,7 +2128,7 @@ function abrirAjustes() {
 
 /** Versión del formato del ARCHIVO, no de la app: sube sólo si cambia la forma
     de los datos, para que una copia vieja se siga pudiendo leer. */
-const FORMATO_COPIA = 1;
+const FORMATO_COPIA = 2;   // 2: con billetera en dólares (ver armarCopia)
 
 /* ---------- estado ---------- */
 
@@ -2053,21 +2198,26 @@ function postergarAvisoCopia() {
 /** Objeto que se guarda en el archivo. La cabecera deja que una versión futura
     sepa qué está leyendo, y el resumen se puede mirar sin abrir los datos. */
 function armarCopia() {
-  const fechas = db.movimientos.map(m => m.fecha).sort();
+  const ars = db.billeteras.ARS, usd = db.billeteras.USD;
+  const fechas = ars.movimientos.concat(usd ? usd.movimientos : []).map(m => m.fecha).sort();
   return {
     app: 'mis-gastos',
-    formato: FORMATO_COPIA,
+    /* Sin billetera en dólares sigue siendo el formato 1, que cualquier
+       versión lee. Con dólares es el 2: una versión vieja la rechaza en
+       lugar de importar los pesos y perder los dólares sin avisar. */
+    formato: usd ? 2 : 1,
     appVersion: APP_VER,
     exportado: new Date().toISOString(),
     origen: esNativo ? 'apk' : 'web',
     resumen: {
-      movimientos: db.movimientos.length,
-      categorias: db.categorias.length,
-      cajas: db.cajas.length,
+      movimientos: ars.movimientos.length,
+      categorias: ars.categorias.length,
+      cajas: ars.cajas.length,
+      movimientosEnDolares: usd ? usd.movimientos.length : 0,
       desde: fechas.length ? fechas[0] : null,
       hasta: fechas.length ? fechas[fechas.length - 1] : null
     },
-    datos: db
+    datos: paraGuardar(db)
   };
 }
 
@@ -2252,6 +2402,16 @@ function leerCopia(texto) {
   }
 
   const { datos, aviso } = sanearDatos(entrada);
+
+  /* La billetera en dólares pasa por el mismo control que la de pesos. */
+  const usd = entrada.billeteras && entrada.billeteras.USD;
+  if (usd && Array.isArray(usd.categorias) && Array.isArray(usd.movimientos)) {
+    const r = sanearDatos(usd);
+    const { categorias, cajas, movimientos, fijos } = r.datos;
+    datos.billeteras = { USD: { categorias, cajas, movimientos, fijos } };
+    for (const k of Object.keys(aviso)) aviso[k] += r.aviso[k];
+  }
+
   return {
     datos, aviso,
     meta: {
@@ -2521,8 +2681,10 @@ async function aplicarImportacion(texto) {
   catch (e) { await soloAviso('No pude importar', e.message); return; }
 
   const { datos, aviso, meta } = copia;
-  const nuevos = datos.movimientos.length;
-  const tengo = db.movimientos.length;
+  const usdEntra = datos.billeteras && datos.billeteras.USD;
+  const nuevosUSD = usdEntra ? usdEntra.movimientos.length : 0;
+  const nuevos = datos.movimientos.length + nuevosUSD;
+  const tengo = Object.values(db.billeteras).reduce((s, b) => s + b.movimientos.length, 0);
 
   let cuando = null;
   if (meta.exportado) {
@@ -2530,11 +2692,13 @@ async function aplicarImportacion(texto) {
     cuando = /^(Hoy|Ayer|Mañana)$/.test(f) ? f.toLowerCase() : `el ${f.toLowerCase()}`;
   }
 
+  const nARS = datos.movimientos.length;
   const lineas = [
-    `La copia trae ${nuevos} movimiento${nuevos === 1 ? '' : 's'}, ` +
+    `La copia trae ${nARS} movimiento${nARS === 1 ? '' : 's'}, ` +
     `${datos.categorias.length} categorías y ${datos.cajas.length} caja${datos.cajas.length === 1 ? '' : 's'} de ahorro.` +
     (cuando ? ` Se hizo ${cuando}.` : '')
   ];
+  if (usdEntra) lineas.push(`Además trae la billetera en dólares, con ${nuevosUSD} movimiento${nuevosUSD === 1 ? '' : 's'}.`);
   if (aviso.descartados) lineas.push(`${aviso.descartados} movimiento${aviso.descartados === 1 ? '' : 's'} del archivo venían dañados y quedan afuera.`);
   if (aviso.reasignados) lineas.push(`${aviso.reasignados} movimiento${aviso.reasignados === 1 ? '' : 's'} perdieron su categoría original y van a «Otros».`);
   if (aviso.futuros) lineas.push(`${aviso.futuros} movimiento${aviso.futuros === 1 ? '' : 's'} tienen fecha futura. Mirá que la fecha del teléfono esté bien.`);
@@ -2570,13 +2734,27 @@ async function aplicarImportacion(texto) {
   if (!modo) return;
 
   const tema = db.ajustes.tema || 'auto';   // el tema es de este teléfono, no de la copia
+  const monedaAntes = moneda();             // y la billetera que se estaba viendo, también
 
   if (modo === 'reemplazar') {
-    db = datos;
+    db = enMemoria(datos);
     avisar(`Importados ${nuevos} movimiento${nuevos === 1 ? '' : 's'}`);
   } else {
-    const { datos: unido, resumen } = fusionar(db, datos);
-    db = unido;
+    /* Cada billetera se fusiona con la suya: nunca se mezclan pesos con dólares. */
+    const ars = fusionar(db.billeteras.ARS, datos);
+    const unido = { ...ars.datos, ajustes: db.ajustes };
+    const resumen = ars.resumen;
+    const usdHay = db.billeteras.USD;
+    if (usdEntra && usdHay) {
+      const u = fusionar(usdHay, usdEntra);
+      unido.billeteras = { USD: u.datos };
+      resumen.movs += u.resumen.movs;
+      resumen.repetidos += u.resumen.repetidos;
+    } else if (usdEntra || usdHay) {
+      unido.billeteras = { USD: usdEntra || usdHay };
+      if (usdEntra) resumen.movs += nuevosUSD;
+    }
+    db = enMemoria(unido);
     avisar(resumen.movs
       ? `Sumados ${resumen.movs} movimiento${resumen.movs === 1 ? '' : 's'}` +
         (resumen.repetidos ? `; ${resumen.repetidos} ya estaban` : '')
@@ -2584,11 +2762,13 @@ async function aplicarImportacion(texto) {
   }
 
   db.ajustes.tema = tema;
+  db.ajustes.moneda = monedaAntes;
   db.ajustes.ultimaCopia = new Date().toISOString();
   delete db.ajustes.avisoCopiaHasta;
   guardar();
 
   aplicarTema(tema);
+  pintarMoneda();
   cerrarHoja('sheetCopia');
   cerrarHoja('sheetSet');
   mesSel = hoyISO().slice(0, 7);
@@ -2599,11 +2779,12 @@ async function aplicarImportacion(texto) {
 /* ---------- borrar todo ---------- */
 
 async function borrarTodo() {
-  const n = db.movimientos.length;
+  const n = Object.values(db.billeteras).reduce((s, b) => s + b.movimientos.length, 0);
   const r = await preguntar({
     titulo: 'Borrar todos los datos',
     texto: [
-      `Se borran ${n} movimiento${n === 1 ? '' : 's'} y las cajas de ahorro, y las categorías vuelven a las originales.`,
+      `Se borran ${n} movimiento${n === 1 ? '' : 's'} y las cajas de ahorro, y las categorías vuelven a las originales.` +
+      (db.billeteras.USD ? ' También se borra la billetera en dólares.' : ''),
       'No se puede deshacer.'
     ],
     acciones: [
@@ -2617,9 +2798,10 @@ async function borrarTodo() {
   if (!await confirmar('Última confirmación', 'Esto borra todo ahora mismo.', 'Sí, borrar todo', true)) return;
 
   const tema = db.ajustes.tema || 'auto';
-  db = datosIniciales();
+  db = enMemoria(datosIniciales());
   db.ajustes.tema = tema;
   guardar();
+  pintarMoneda();
   cerrarHoja('sheetSet');
   mesSel = hoyISO().slice(0, 7);
   grupoActivo = null;
@@ -2731,6 +2913,14 @@ function conectar() {
     aplicarTema(b.dataset.tema);
     if (vista === 'resumen') renderMesChart();
   }));
+  $$('[data-moneda]').forEach(b => b.addEventListener('click', () => {
+    if (usarBilletera(b.dataset.moneda)) abrirAjustes();   // refresca los números de la hoja
+  }));
+  /* En la cabecera hay sólo dos billeteras: tocar cambia a la otra. */
+  $('#btnMoneda').addEventListener('click', () => {
+    const otra = moneda() === 'ARS' ? 'USD' : 'ARS';
+    if (usarBilletera(otra)) avisar(`Billetera en ${MONEDAS[otra].nombre}`);
+  });
   $('#btnExportar').addEventListener('click', exportar);
   /* Pregunta primero: archivo o texto pegado. En el APK el selector de
      archivos es incómodo y mucha gente tiene la copia en un mensaje. */
@@ -3483,26 +3673,39 @@ function pintarPlazo() {
  * No corre sin Premium: los fijos quedan guardados y en pausa. Devuelve
  * cuántos movimientos cargó, para poder avisarlo.
  */
+/* Corre en todas las billeteras, no sólo en la que se está viendo: si no,
+   el alquiler en dólares no se cargaría hasta que alguien abra esa
+   billetera. Lo cargado se suma a `cargadosRecien` de cada una. */
 function correrFijos() {
-  if (!Array.isArray(db.fijos) || !db.fijos.length) return 0;
   if (!puede('fijos')) return 0;
 
+  let total = 0;
+  for (const [cod, b] of Object.entries(db.billeteras)) {
+    const n = correrFijosDe(b);
+    if (n) cargadosRecien[cod] = (cargadosRecien[cod] || 0) + n;
+    total += n;
+  }
+  if (total) guardar();
+  return total;
+}
+
+function correrFijosDe(b) {
   const hoy = hoyISO();
   let cargados = 0;
 
-  for (const f of db.fijos) {
+  for (const f of b.fijos) {
     for (const ym of mesesPendientes(f, hoy)) {
       /* La categoría puede haber sido borrada después de crear el fijo.
          Antes que perder el movimiento, se carga en la primera que haya
          del mismo tipo; si no hay ninguna, se saltea sin romper nada. */
       let catId = f.categoriaId;
-      if (!catPorId(catId)) {
-        const alt = catsDe(f.tipo)[0];
+      if (!b.categorias.some(c => c.id === catId)) {
+        const alt = b.categorias.find(c => c.tipo === f.tipo);
         if (!alt) continue;
         catId = alt.id;
       }
 
-      db.movimientos.push({
+      b.movimientos.push({
         id: uid(),
         tipo: f.tipo,
         monto: f.monto,
@@ -3521,8 +3724,6 @@ function correrFijos() {
       cargados++;
     }
   }
-
-  if (cargados) guardar();
   return cargados;
 }
 
@@ -3530,16 +3731,18 @@ function correrFijos() {
    Aviso en el Resumen
    --------------------------------------------------------- */
 
-let cargadosRecien = 0;
+/** Fijos cargados en esta sesión, por billetera: cada una avisa los suyos. */
+let cargadosRecien = {};
 
 function pintarAvisoFijos() {
   const el = $('#avisoFijos');
   if (!el) return;
-  el.hidden = !cargadosRecien;
-  if (!cargadosRecien) return;
-  $('#avisoFijosTexto').textContent = cargadosRecien === 1
+  const n = cargadosRecien[moneda()] || 0;
+  el.hidden = !n;
+  if (!n) return;
+  $('#avisoFijosTexto').textContent = n === 1
     ? 'Se cargó 1 movimiento fijo. Revisalo por las dudas: si algo no era así, editalo o borralo.'
-    : `Se cargaron ${cargadosRecien} movimientos fijos. Revisalos por las dudas: si alguno no era así, editalo o borralo.`;
+    : `Se cargaron ${n} movimientos fijos. Revisalos por las dudas: si alguno no era así, editalo o borralo.`;
 }
 
 /* ---------------------------------------------------------
@@ -3708,7 +3911,6 @@ function guardarFijo() {
   editandoFijo = null;
 
   const n = correrFijos();          // puede corresponder cargarlo ya mismo
-  if (n) { cargadosRecien += n; }
   renderFijos();
   renderTodo();
   avisar(n ? 'Fijo guardado y cargado este mes' : 'Movimiento fijo guardado');
@@ -3753,7 +3955,7 @@ function conectarFijos() {
   }));
 
   $('#avisoFijosOk').addEventListener('click', () => {
-    cargadosRecien = 0;
+    cargadosRecien[moneda()] = 0;
     pintarAvisoFijos();
   });
 }
@@ -4175,8 +4377,8 @@ function aplicarPlan() {
   /* Los fijos corren acá y no en el arranque porque dependen del plan, y
      el plan se resuelve de forma asíncrona. Así también se cargan los que
      estaban en pausa en el momento en que alguien activa Premium. */
-  const n = correrFijos();
-  if (n) cargadosRecien += n;
+  correrFijos();
+  pintarMoneda();
   pintarPlan();
   renderTodo();
 }
@@ -4311,7 +4513,8 @@ const MOTIVOS = {
   metas:      () => 'Ponele una meta a cada caja de ahorro y mirá cuánto te falta y en cuántos meses llegás.',
   comparar:   () => 'Mirá en qué se te fue la plata este mes comparado con los anteriores, categoría por categoría.',
   filtros:    () => 'Buscá en todo tu historial, no sólo en el mes que estás viendo: por categoría, por monto o por período.',
-  escaner:    () => 'Sacale una foto al ticket y el gasto se carga solo: lee el QR de la factura o, si no tiene, el texto. Todo en tu teléfono.'
+  escaner:    () => 'Sacale una foto al ticket y el gasto se carga solo: lee el QR de la factura o, si no tiene, el texto. Todo en tu teléfono.',
+  divisas:    () => 'Llevá tus dólares en una billetera aparte, con sus propios ingresos, egresos, fijos y cajas de ahorro, sin mezclarlos con los pesos.'
 };
 
 function abrirPremium(motivo) {
