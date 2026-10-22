@@ -129,7 +129,12 @@ ul { margin: 0; padding-left: 1.1em; }
   border-bottom: 1px solid var(--hairline);
 }
 .topbar-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.topbar h1 { font-size: 1.2rem; font-weight: 650; letter-spacing: -0.02em; }
+.topbar h1 {
+  font-size: 1.2rem; font-weight: 650; letter-spacing: -0.02em;
+  /* con el botón de billetera y el de Premium juntos, en un teléfono
+     angosto el título se corta antes de pisarlos */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 /* La marca de la cabecera es el mismo dibujo que el ícono de la app:
    tres barras de altura creciente con la punta redondeada, sobre una
    baldosa de esquinas suaves. Va en SVG y no en CSS porque antes la
@@ -1024,6 +1029,24 @@ tbody tr:last-child td { border-bottom: 0; }
   white-space: nowrap;
 }
 .pill-pro:active { opacity: .85; }
+
+/* Billetera que se está viendo. En dólares se tiñe de verde, para que
+   no se confunda nunca una billetera con la otra. */
+.moneda-chip {
+  flex: none;
+  min-width: 44px; padding: 7px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--wash); color: var(--ink-2);
+  border: 1px solid var(--hairline);
+  font-size: 0.76rem; font-weight: 650; letter-spacing: 0.02em;
+}
+.moneda-chip.es-usd {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  border-color: color-mix(in srgb, var(--good) 40%, transparent);
+  color: var(--good);
+}
+.moneda-chip:active { opacity: .8; }
+.moneda-chip[hidden] { display: none; }
 
 /* Botón dorado para las llamadas a Premium. Tinta oscura encima y no
    blanca: sobre dorado el blanco apenas se lee. */

@@ -1,5 +1,5 @@
 {
-  "version": "2.3",
+  "version": "2.4",
   "apk": "https://github.com/matumir/mis-gastos-apk/releases/latest/download/mis-gastos.apk",
-  "nota": "Resumen del mes, cuotas en los fijos, sonidos, recordatorio diario y mejor lectura de tickets."
+  "nota": "Billetera en dólares (Premium): ingresos, egresos, fijos y ahorros aparte de los pesos."
 }

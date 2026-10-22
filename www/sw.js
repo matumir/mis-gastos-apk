@@ -15,7 +15,7 @@
       de que el usuario quede clavado en una versión vieja para siempre.
    ========================================================= */
 
-const VERSION = '2.3';
+const VERSION = '2.4';
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium

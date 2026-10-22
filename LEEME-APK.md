@@ -241,6 +241,24 @@ Probado en navegador con tickets generados (QR, texto inclinado, poco contraste,
 
 ---
 
+## Novedades de la BETA 2.4
+
+- **Billetera en dólares (Premium).** Ingresos, egresos, fijos, presupuestos y cajas
+  de ahorro completamente aparte de los pesos. Se cambia con el botón `ARS`/`USD` de
+  la cabecera o en *Ajustes → Billetera*. Arranca con una copia de las categorías de
+  pesos (sin los presupuestos) y las cajas de inicio; desde ahí cada una va por su lado.
+  Los topes del plan gratis cuentan por billetera.
+- **Guardado:** la billetera en pesos sigue en el mismo lugar de siempre y la de
+  dólares va aparte (`billeteras.USD`), así lo ya cargado no se toca. Sin Premium no se
+  puede crear, pero si ya existe se sigue viendo: lo que alguien armó no se le saca.
+- **Voz:** «gasté 50 dólares en nafta» va a la billetera en dólares aunque estés en
+  pesos (y «pesos» al revés), avisando dónde quedó.
+- **Fijos:** se cargan en las dos billeteras, se esté viendo la que se esté viendo.
+- **Tickets:** en la billetera en dólares, una factura en dólares queda con su importe
+  original; un ticket en pesos se carga igual pero avisa para revisar.
+- **Copia de seguridad:** lleva las dos billeteras. Si hay dólares es el formato 2,
+  que las versiones anteriores rechazan en lugar de importar sólo los pesos.
+
 ## Novedades de la BETA 2.3
 
 - **Recordatorios arreglados.** Hasta la 2.2 se mandaban a un canal de Android que
