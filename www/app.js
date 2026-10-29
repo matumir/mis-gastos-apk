@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.4';
+const APP_VER = '2.5';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -871,6 +871,10 @@ function renderResumen() {
 
   $('#kpiIngresos').textContent = plata(t.ingresos);
   $('#kpiEgresos').textContent = plata(t.egresos);
+  pintarPesificado('#heroPesos', t.balance);
+  pintarPesificado('#kpiIngresosPesos', t.ingresos);
+  pintarPesificado('#kpiEgresosPesos', t.egresos);
+  pintarAccesoCotiz();
   $('#kpiIngresosDelta').innerHTML = delta(t.ingresos, tPrev.ingresos, false);
   $('#kpiEgresosDelta').innerHTML  = delta(t.egresos, tPrev.egresos, true);
 
@@ -1950,7 +1954,9 @@ function vozFallo(msg) {
 function vozResultado() {
   if (yaResolvio || cancelado) return;
   yaResolvio = true;
-  const dicho = (textoFinal || $('#micTexto').textContent || '').trim();
+  /* Lo que se ve en pantalla es lo más completo que se escuchó: en el
+     navegador incluye el último tramo aunque no haya llegado a «final». */
+  const dicho = ($('#micTexto').textContent || textoFinal || '').trim();
   if (!dicho) {
     $('#micEstado').textContent = 'No te escuché. Probá de nuevo.';
     $('#micEjemplos').hidden = false;
@@ -1984,11 +1990,37 @@ function alternarGrabacion() {
 }
 
 function detenerVoz() {
-  if (VozNativa) { VozNativa.stop().catch(() => {}); return; }
+  if (VozNativa) {
+    VozNativa.stop().catch(() => {});   // el plugin nunca resuelve stop(): no se espera
+    vozTermino();
+    esperarFinalNativo(ESPERA_FINAL);
+    return;
+  }
   try { rec.stop(); } catch (e) {}
 }
 
+/* Con resultados parciales, Android avisa que dejó de escuchar ANTES de
+   mandar el resultado final, que llega después por el mismo evento
+   `partialResults`. Si se resolvía en ese aviso quedaba el último parcial,
+   al que le suele faltar la última palabra («gasté 2000 en dos helados»
+   terminaba en «…en dos»). Ahora se espera: cada resultado que llega
+   acorta la espera, y si no llega ninguno se sigue igual con lo que haya. */
+const ESPERA_FINAL = 1500;        // ms sin noticias después de dejar de escuchar
+const ESPERA_TRAS_RESULTADO = 400;
+let esperaFinal = null;
+function esperarFinalNativo(ms) {
+  clearTimeout(esperaFinal);
+  if (!yaResolvio) $('#micEstado').textContent = 'Un segundo…';
+  esperaFinal = setTimeout(() => {
+    esperaFinal = null;
+    vozResultado();
+    limpiarOyentes();
+  }, ms);
+}
+
 function cancelarVoz() {
+  clearTimeout(esperaFinal);
+  esperaFinal = null;
   cancelado = true;
   yaResolvio = true;
   if (grabando) {
@@ -2027,18 +2059,22 @@ async function grabarNativo() {
     return;
   }
 
+  clearTimeout(esperaFinal);
+  esperaFinal = null;
   await limpiarOyentes();
   try {
     oyentes.push(await VozNativa.addListener('partialResults', d => {
       if (d && d.matches && d.matches.length) {
         textoFinal = d.matches[0];
         $('#micTexto').textContent = textoFinal;
+        // ya dejó de escuchar: éste es (casi seguro) el resultado final
+        if (esperaFinal) esperarFinalNativo(ESPERA_TRAS_RESULTADO);
       }
     }));
     oyentes.push(await VozNativa.addListener('listeningState', d => {
       if (!d) return;
       if (d.status === 'started') vozEmpezo();
-      if (d.status === 'stopped') { vozTermino(); vozResultado(); limpiarOyentes(); }
+      if (d.status === 'stopped') { vozTermino(); esperarFinalNativo(ESPERA_FINAL); }
     }));
   } catch (e) { /* sin eventos igual sirve: start() devuelve el resultado */ }
 
@@ -2948,7 +2984,7 @@ function conectar() {
   // teclado
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetFiltros', 'sheetAdmin'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
+    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetCotiz', 'sheetFiltros', 'sheetAdmin'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
     if (!$('#sheetTicket').hidden) cerrarTicket();
   });
 
@@ -3552,6 +3588,137 @@ function conectarComparar() {
     modoComp = b.dataset.modocomp;
     renderComparar();
   }));
+}
+
+/* =========================================================
+   Cotizaciones
+
+   Los precios los trae cotizaciones.js. Acá está lo que se ve: el acceso
+   del Resumen, la hoja con todos los tipos de dólar y, en la billetera en
+   dólares, cuánto es en pesos al oficial de venta.
+   ========================================================= */
+
+const pesosRedondos = n => FMT.ARS.ent.format(Math.round(n));
+const pesosExactos = n => (Number.isInteger(n) ? FMT.ARS.ent : FMT.ARS.dec).format(n);
+
+function haceCuanto(iso) {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (!Number.isFinite(min)) return '';
+  if (min < 1) return 'recién';
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'ayer' : `hace ${d} días`;
+}
+
+/** «≈ $ 1.872.000» al lado de un monto, sólo en la billetera en dólares. */
+function pintarPesificado(sel, monto) {
+  const el = $(sel);
+  const tc = moneda() === 'USD' ? Cotiz.valor('oficial', 'venta') : null;
+  el.hidden = !tc;
+  if (!tc) return;
+  el.textContent = `≈ ${pesosRedondos(monto * tc)}`;
+  el.title = `En pesos, al dólar oficial de ${pesosExactos(tc)}`;
+}
+
+/* Las que se ven en el Resumen sin abrir la hoja. Las elige cada persona;
+   de entrada, el oficial y el blue. Es un ajuste de este dispositivo. */
+const COTIZ_VISTA_INICIAL = ['oficial', 'blue'];
+const cotizEnVista = () => (Array.isArray(db.ajustes.cotizVista) ? db.ajustes.cotizVista : COTIZ_VISTA_INICIAL);
+
+function pintarAccesoCotiz() {
+  const elegidas = new Set(cotizEnVista());
+  const filas = Cotiz.CATALOGO
+    .filter(c => elegidas.has(c.id))
+    .map(c => [c, Cotiz.valor(c.id, 'venta')])
+    .filter(([, v]) => v);
+  const vista = $('#cotizVista'), sub = $('#accesoCotizSub');
+  vista.hidden = !filas.length;
+  sub.hidden = !!filas.length;
+  vista.innerHTML = filas.map(([c, v]) => `
+    <span class="cv"><span class="cv-nombre">${esc(c.corto)}</span><span class="cv-val">${pesosExactos(v)}</span></span>`).join('');
+}
+
+function pintarCotizVistaPick() {
+  const elegidas = new Set(cotizEnVista());
+  const cont = $('#cotizVistaPick');
+  cont.innerHTML = Cotiz.CATALOGO.map(c => `
+    <button type="button" class="catchip ${elegidas.has(c.id) ? 'is-on' : ''}" data-cotiz="${c.id}" aria-pressed="${elegidas.has(c.id)}">${esc(c.corto)}</button>`).join('');
+  $$('#cotizVistaPick [data-cotiz]').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.cotiz;
+    const actual = cotizEnVista();
+    db.ajustes.cotizVista = actual.includes(id) ? actual.filter(x => x !== id) : actual.concat(id);
+    guardar();
+    pintarCotizVistaPick();
+    pintarAccesoCotiz();
+  }));
+}
+
+function renderCotiz(error = false) {
+  pintarCotizVistaPick();
+  const d = Cotiz.leer();
+  if (!d) {
+    $('#cotizLista').innerHTML = '';
+    $('#cotizMonedas').innerHTML = '';
+    $('#cotizEstado').textContent = error
+      ? 'No pude traer las cotizaciones. Revisá la conexión y probá de nuevo.'
+      : 'Buscando las cotizaciones…';
+    return;
+  }
+  const val = v => (v ? pesosExactos(v) : '—');
+  const tabla = (titulo, grupo) => {
+    const filas = Cotiz.CATALOGO
+      .filter(c => c.grupo === grupo)
+      .map(c => [c, d.items.find(x => x.id === c.id)])
+      .filter(([, x]) => x);
+    if (!filas.length) return '';
+    return `<div class="cotiz-cab"><span>${titulo}</span><span>Compra</span><span>Venta</span></div>` + filas.map(([c, x]) => `
+      <div class="cotiz-fila">
+        <span class="cotiz-tipo">
+          <span class="cotiz-nombre">${esc(c.nombre)}</span>
+          <span class="cotiz-que">${esc(c.que)}</span>
+        </span>
+        <span class="cotiz-val">${val(x.compra)}</span>
+        <span class="cotiz-val">${val(x.venta)}</span>
+      </div>`).join('');
+  };
+  $('#cotizLista').innerHTML = tabla('Dólar', 'dolar');
+  $('#cotizMonedas').innerHTML = tabla('Otras monedas', 'moneda');
+  $('#cotizEstado').textContent = (error ? 'Sin conexión: muestro la última que tengo. ' : '')
+    + `Consultado ${haceCuanto(d.traido)} en ${d.fuente}.`;
+}
+
+async function refrescarCotiz({ forzar = false } = {}) {
+  const b = $('#btnCotizActualizar');
+  if (forzar) { b.disabled = true; b.textContent = 'Actualizando…'; }
+  const r = await Cotiz.actualizar({ forzar });
+  b.disabled = false;
+  b.textContent = 'Actualizar';
+  if (!$('#sheetCotiz').hidden) renderCotiz(r.error);
+}
+
+function abrirCotiz() {
+  renderCotiz();
+  abrirHoja('sheetCotiz');
+  refrescarCotiz();
+}
+
+function conectarCotizaciones() {
+  $('#accesoCotiz').addEventListener('click', abrirCotiz);
+  $('#sheetCotizClose').addEventListener('click', () => cerrarHoja('sheetCotiz'));
+  $('#sheetCotizBack').addEventListener('click', () => cerrarHoja('sheetCotiz'));
+  $('#btnCotizActualizar').addEventListener('click', () => refrescarCotiz({ forzar: true }));
+
+  // llegó una cotización nueva: se repinta lo que la muestra
+  window.addEventListener('cotizaciones', () => {
+    if (vista === 'resumen') renderResumen();
+    if (!$('#sheetCotiz').hidden) renderCotiz();
+  });
+  // al volver a la app o recuperar internet (no pregunta si tiene menos de 15 min)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Cotiz.actualizar(); });
+  window.addEventListener('online', () => Cotiz.actualizar());
+  Cotiz.actualizar();
 }
 
 /* =========================================================
@@ -4647,6 +4814,7 @@ conectar();
 conectarLicencia();
 conectarFijos();
 conectarComparar();
+conectarCotizaciones();
 conectarFiltros();
 conectarVersion();
 conectarAvisos();

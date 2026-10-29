@@ -241,6 +241,23 @@ Probado en navegador con tickets generados (QR, texto inclinado, poco contraste,
 
 ---
 
+## Novedades de la BETA 2.5
+
+- **Cotizaciones** (en las dos billeteras, gratis): una hoja con los 7 tipos de dólar
+  (oficial, blue, MEP, CCL, mayorista, cripto y tarjeta) y el euro, el real, el peso
+  chileno y el peso uruguayo al oficial, con compra y venta. En el Resumen, una tarjeta
+  muestra las que cada uno elija tener a la vista (de entrada, oficial y blue); se
+  eligen en la misma hoja y quedan en `ajustes.cotizVista`.
+  Vienen de [DolarApi.com](https://dolarapi.com), con [Bluelytics](https://bluelytics.com.ar)
+  de respaldo (sólo dólar oficial, blue y euro). Lo hace `www/cotizaciones.js`; la
+  última respuesta se guarda en `misgastos.cotizaciones` (fuera de las copias) para
+  verla sin conexión, y no se vuelve a preguntar antes de 15 minutos.
+- **Billetera en dólares en pesos:** balance, ingresos y egresos muestran al lado
+  «≈ $ …» al dólar oficial de venta.
+- **Voz:** ya no pierde la última palabra. En Android el aviso de «dejé de escuchar»
+  llega antes que el resultado final; ahora se espera ese resultado (hasta 1,5 s).
+- **Privacidad:** `privacidad.html` explica la consulta de cotizaciones.
+
 ## Novedades de la BETA 2.4
 
 - **Billetera en dólares (Premium).** Ingresos, egresos, fijos, presupuestos y cajas

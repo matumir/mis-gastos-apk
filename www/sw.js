@@ -15,7 +15,7 @@
       de que el usuario quede clavado en una versión vieja para siempre.
    ========================================================= */
 
-const VERSION = '2.4';
+const VERSION = '2.5';
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium
@@ -39,6 +39,7 @@ const ARCHIVOS = [
   './ticket.js',
   './sonidos.js',
   './resumen-mes.js',
+  './cotizaciones.js',
   './admin.js',
   './privacidad.html',
   './manifest.webmanifest',
@@ -71,6 +72,9 @@ self.addEventListener('activate', ev => {
 self.addEventListener('fetch', ev => {
   const req = ev.request;
   if (req.method !== 'GET') return;
+  /* Las cotizaciones (y cualquier otro sitio) van siempre directo a la
+     red: guardar la última es cosa de cotizaciones.js, que sabe su fecha. */
+  if (new URL(req.url).origin !== self.location.origin) return;
 
   /* Navegación: red primero, cache de respaldo. Así, con internet, el
      index.html siempre es el último. */

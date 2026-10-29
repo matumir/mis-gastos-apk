@@ -1,5 +1,5 @@
 {
-  "version": "2.4",
+  "version": "2.5",
   "apk": "https://github.com/matumir/mis-gastos-apk/releases/latest/download/mis-gastos.apk",
-  "nota": "Billetera en dólares (Premium): ingresos, egresos, fijos y ahorros aparte de los pesos."
+  "nota": "Cotizaciones del dólar, euro, real y más, a la vista en el Resumen; tu billetera en dólares también en pesos; la voz ya no pierde la última palabra."
 }

@@ -94,22 +94,41 @@
 
     <div class="card hero-card">
       <p class="hero-label">Balance del mes</p>
-      <p class="hero-figure" id="heroBalance">$0</p>
+      <div class="monto-fila">
+        <p class="hero-figure" id="heroBalance">$0</p>
+        <span class="pesificado pesificado-hero" id="heroPesos" hidden></span>
+      </div>
       <p class="hero-note" id="heroNota"></p>
     </div>
 
     <div class="kpi-row">
       <div class="card kpi">
         <p class="kpi-label"><span class="key key-in" aria-hidden="true"></span>Ingresos</p>
-        <p class="kpi-value" id="kpiIngresos">$0</p>
+        <div class="monto-fila">
+          <p class="kpi-value" id="kpiIngresos">$0</p>
+          <span class="pesificado" id="kpiIngresosPesos" hidden></span>
+        </div>
         <p class="kpi-delta" id="kpiIngresosDelta"></p>
       </div>
       <div class="card kpi">
         <p class="kpi-label"><span class="key key-out" aria-hidden="true"></span>Egresos</p>
-        <p class="kpi-value" id="kpiEgresos">$0</p>
+        <div class="monto-fila">
+          <p class="kpi-value" id="kpiEgresos">$0</p>
+          <span class="pesificado" id="kpiEgresosPesos" hidden></span>
+        </div>
         <p class="kpi-delta" id="kpiEgresosDelta"></p>
       </div>
     </div>
+
+    <button class="acceso acceso-cotiz" id="accesoCotiz">
+      <span class="acceso-ico" aria-hidden="true">💵</span>
+      <span class="acceso-txt">
+        <span class="acceso-name">Cotizaciones</span>
+        <span class="acceso-sub" id="accesoCotizSub">El dólar, el euro, el real y más</span>
+      </span>
+      <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="cotiz-vista" id="cotizVista" hidden></span>
+    </button>
 
     <div class="card" id="cardAhorro" hidden>
       <div class="card-head card-head-tight">
@@ -699,6 +718,32 @@
   </div>
 </section>
 
+<!-- ===================== HOJA: COTIZACIONES ===================== -->
+<div class="sheet-backdrop" id="sheetCotizBack" hidden></div>
+<section class="sheet" id="sheetCotiz" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCotizTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetCotizTitle">Cotizaciones</h2>
+    <button class="icon-btn" id="sheetCotizClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help" id="cotizEstado" role="status">—</p>
+    <div class="cotiz-lista" id="cotizLista"></div>
+    <div class="cotiz-lista" id="cotizMonedas"></div>
+    <button class="btn btn-ghost btn-block" id="btnCotizActualizar">Actualizar</button>
+
+    <div class="field cotiz-elegir">
+      <span class="field-label">A la vista en el Resumen</span>
+      <p class="field-help">Tocá las que quieras ver siempre, sin entrar acá.</p>
+      <div class="catpick" id="cotizVistaPick"></div>
+    </div>
+
+    <p class="field-help">Son valores de referencia, en pesos por cada unidad de la moneda. Las otras monedas son al cambio oficial. En la billetera en dólares, lo que ves «≈ en pesos» usa el dólar oficial de venta.</p>
+  </div>
+</section>
+
 <!-- ===================== HOJA: COMPARAR ===================== -->
 <div class="sheet-backdrop" id="sheetCompBack" hidden></div>
 <section class="sheet" id="sheetComp" hidden aria-modal="true" role="dialog" aria-labelledby="sheetCompTitle">
@@ -1004,6 +1049,7 @@
 <script src="ticket.js"></script>
 <script src="sonidos.js"></script>
 <script src="resumen-mes.js"></script>
+<script src="cotizaciones.js"></script>
 <script src="admin.js"></script>
 <script src="app.js"></script>
 </body>
