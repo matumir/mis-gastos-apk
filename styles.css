@@ -219,6 +219,54 @@ ul { margin: 0; padding-left: 1.1em; }
   font-size: 1.32rem; font-weight: 620; letter-spacing: -0.025em; margin-top: 7px;
 }
 .kpi-delta { font-size: 0.74rem; color: var(--ink-muted); margin-top: 4px; min-height: 1em; }
+
+/* En la billetera en dólares, cuánto es en pesos: al lado del monto si
+   entra, y si no, justo debajo. */
+.monto-fila {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  column-gap: 10px; row-gap: 2px;
+}
+.pesificado {
+  font-size: 0.76rem; font-weight: 560; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.pesificado-hero { font-size: 0.95rem; }
+.pesificado[hidden] { display: none; }
+
+/* Lista de cotizaciones: tipo, compra y venta en columnas alineadas */
+.cotiz-lista { display: grid; margin: 4px 0 14px; }
+.cotiz-cab, .cotiz-fila {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: 14px; align-items: center;
+}
+.cotiz-cab {
+  font-size: 0.72rem; font-weight: 600; color: var(--ink-muted);
+  letter-spacing: 0.02em; text-transform: uppercase;
+  padding: 0 0 8px; border-bottom: 1px solid var(--hairline);
+}
+.cotiz-fila { padding: 11px 0; border-bottom: 1px solid var(--hairline); }
+.cotiz-cab span:not(:first-child), .cotiz-val { text-align: right; min-width: 74px; }
+.cotiz-tipo { display: grid; gap: 1px; min-width: 0; }
+.cotiz-nombre { font-size: 0.92rem; font-weight: 600; letter-spacing: -0.01em; }
+.cotiz-que { font-size: 0.74rem; color: var(--ink-muted); }
+.cotiz-val { font-size: 0.92rem; font-weight: 560; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cotiz-lista:empty { display: none; }
+.cotiz-lista + .cotiz-lista { margin-top: 10px; }
+.cotiz-elegir { margin-top: 18px; }
+
+/* Las cotizaciones elegidas, dentro de la tarjeta del Resumen: debajo del
+   título y a todo el ancho, así en un teléfono angosto entran de a dos. */
+.acceso-cotiz { flex-wrap: wrap; }
+.cotiz-vista {
+  flex-basis: 100%;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px 14px; margin-top: 2px;
+  padding-top: 10px; border-top: 1px solid var(--hairline);
+}
+.cotiz-vista[hidden] { display: none; }
+.cv { display: grid; gap: 1px; min-width: 0; }
+.cv-nombre { font-size: 0.72rem; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-val { font-size: 0.92rem; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .kpi-delta .up   { color: var(--bad); }
 .kpi-delta .down { color: var(--good); }
 
