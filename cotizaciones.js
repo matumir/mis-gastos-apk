@@ -10,6 +10,11 @@
    sólo el dólar oficial, el blue y el euro oficial. Ninguna de las dos
    recibe datos tuyos: la app sólo pide los precios.
 
+   Las criptomonedas (Bitcoin, Ethereum y las más conocidas) van en
+   dólares, con la variación de las últimas 24 horas, y vienen de
+   CoinGecko, con las mismas condiciones. Se piden aparte: si una de las
+   dos consultas falla, la otra se muestra igual.
+
    La última respuesta se guarda en el dispositivo, aparte de los datos
    (no viaja en las copias de seguridad), así la app sigue mostrando la
    última cotización conocida —con su fecha— cuando no hay internet.
@@ -35,8 +40,19 @@
     { id: 'EUR',             grupo: 'moneda', nombre: 'Euro',                    corto: 'Euro',            que: 'Unión Europea' },
     { id: 'BRL',             grupo: 'moneda', nombre: 'Real',                    corto: 'Real',            que: 'Brasil' },
     { id: 'CLP',             grupo: 'moneda', nombre: 'Peso chileno',            corto: 'Peso chileno',    que: 'Chile' },
-    { id: 'UYU',             grupo: 'moneda', nombre: 'Peso uruguayo',           corto: 'Peso uruguayo',   que: 'Uruguay' }
+    { id: 'UYU',             grupo: 'moneda', nombre: 'Peso uruguayo',           corto: 'Peso uruguayo',   que: 'Uruguay' },
+    // las cripto: `id` es el de CoinGecko; el precio es en dólares
+    { id: 'bitcoin',         grupo: 'cripto', nombre: 'Bitcoin',                 corto: 'Bitcoin',         que: 'BTC' },
+    { id: 'ethereum',        grupo: 'cripto', nombre: 'Ethereum',                corto: 'Ethereum',        que: 'ETH' },
+    { id: 'binancecoin',     grupo: 'cripto', nombre: 'BNB',                     corto: 'BNB',             que: 'BNB' },
+    { id: 'solana',          grupo: 'cripto', nombre: 'Solana',                  corto: 'Solana',          que: 'SOL' },
+    { id: 'ripple',          grupo: 'cripto', nombre: 'XRP',                     corto: 'XRP',             que: 'XRP' },
+    { id: 'cardano',         grupo: 'cripto', nombre: 'Cardano',                 corto: 'Cardano',         que: 'ADA' },
+    { id: 'dogecoin',        grupo: 'cripto', nombre: 'Dogecoin',                corto: 'Dogecoin',        que: 'DOGE' },
+    { id: 'tron',            grupo: 'cripto', nombre: 'TRON',                    corto: 'TRON',            que: 'TRX' },
+    { id: 'litecoin',        grupo: 'cripto', nombre: 'Litecoin',                corto: 'Litecoin',        que: 'LTC' }
   ];
+  const esCripto = id => CATALOGO.some(c => c.id === id && c.grupo === 'cripto');
   const EN_CATALOGO = new Set(CATALOGO.map(c => c.id));
   const esMoneda = id => CATALOGO.some(c => c.id === id && c.grupo === 'moneda');
 
@@ -102,33 +118,67 @@
     }
   ];
 
+  /** Los pesos, de la primera fuente que conteste. null si ninguna. */
+  async function traerPesos(previa) {
+    for (const f of FUENTES) {
+      try {
+        const items = (await f.traer(previa)).filter(x => x.compra || x.venta);
+        if (items.some(x => x.id === 'oficial')) return { items, fuente: f.nombre };
+      } catch (e) {
+        console.warn(`Cotizaciones: ${f.nombre} no contestó`, e && e.message);
+      }
+    }
+    return null;
+  }
+
+  /** Las cripto en dólares: [{ id, precio, cambio }]. null si no contesta. */
+  async function traerCripto() {
+    const ids = CATALOGO.filter(c => c.grupo === 'cripto').map(c => c.id);
+    try {
+      const d = await pedir(`https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd&include_24hr_change=true`);
+      const items = ids
+        .filter(id => d && d[id] && num(d[id].usd))
+        .map(id => ({ id, precio: Number(d[id].usd), cambio: Number.isFinite(d[id].usd_24h_change) ? d[id].usd_24h_change : null }));
+      return items.length ? items : null;
+    } catch (e) {
+      console.warn('Cotizaciones: CoinGecko no contestó', e && e.message);
+      return null;
+    }
+  }
+
   let enCurso = null;
 
   /**
    * Trae las cotizaciones. Sin `forzar`, si las guardadas tienen menos de
-   * 15 minutos no pregunta. Nunca lanza: si ninguna fuente contesta,
-   * devuelve las últimas guardadas (o null) y `error` en true.
+   * 15 minutos (y ya incluyen las cripto) no pregunta. Nunca lanza: lo que
+   * no contesta queda con lo último guardado. `error` dice si fallaron los
+   * pesos y `errorCripto` si fallaron las cripto.
    */
   function actualizar({ forzar = false } = {}) {
     const previa = leer();
-    if (!forzar && previa && Date.now() - new Date(previa.traido).getTime() < VIGENCIA) {
-      return Promise.resolve({ datos: previa, error: false });
-    }
+    const fresca = previa && previa.traidoCripto
+      && Date.now() - new Date(previa.traido).getTime() < VIGENCIA
+      && Date.now() - new Date(previa.traidoCripto).getTime() < VIGENCIA;
+    if (!forzar && fresca) return Promise.resolve({ datos: previa, error: false, errorCripto: false });
     if (enCurso) return enCurso;
     enCurso = (async () => {
-      for (const f of FUENTES) {
-        try {
-          const items = (await f.traer(previa)).filter(x => x.compra || x.venta);
-          if (!items.some(x => x.id === 'oficial')) continue;
-          const datos = { items, fuente: f.nombre, traido: new Date().toISOString() };
-          guardar(datos);
-          raiz.dispatchEvent(new CustomEvent('cotizaciones', { detail: datos }));
-          return { datos, error: false };
-        } catch (e) {
-          console.warn(`Cotizaciones: ${f.nombre} no contestó`, e && e.message);
-        }
-      }
-      return { datos: previa, error: true };
+      const [pesos, cripto] = await Promise.all([traerPesos(previa), traerCripto()]);
+      if (!pesos && !cripto) return { datos: previa, error: true, errorCripto: true };
+
+      const ahora = new Date().toISOString();
+      const viejas = previa ? previa.items : [];
+      const datos = {
+        items: [
+          ...(pesos ? pesos.items : viejas.filter(x => !esCripto(x.id))),
+          ...(cripto || viejas.filter(x => esCripto(x.id)))
+        ],
+        fuente: pesos ? pesos.fuente : (previa && previa.fuente) || null,
+        traido: pesos ? ahora : (previa && previa.traido) || null,
+        traidoCripto: cripto ? ahora : (previa && previa.traidoCripto) || null
+      };
+      guardar(datos);
+      raiz.dispatchEvent(new CustomEvent('cotizaciones', { detail: datos }));
+      return { datos, error: !pesos, errorCripto: !cripto };
     })().finally(() => { enCurso = null; });
     return enCurso;
   }

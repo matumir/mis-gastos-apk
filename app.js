@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.5';
+const APP_VER = '2.6';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -871,6 +871,13 @@ function renderResumen() {
 
   $('#kpiIngresos').textContent = plata(t.ingresos);
   $('#kpiEgresos').textContent = plata(t.egresos);
+  /* Balance total: la suma de los balances de todos los meses, o sea, lo
+     que entró menos lo que salió y lo que fue a ahorro, en todo lo cargado. */
+  const total = disponible();
+  const elTotal = $('#heroTotal');
+  elTotal.textContent = plata(total);
+  elTotal.style.color = total < 0 ? 'var(--bad)' : '';
+  pintarPesificado('#heroTotalPesos', total);
   pintarPesificado('#heroPesos', t.balance);
   pintarPesificado('#kpiIngresosPesos', t.ingresos);
   pintarPesificado('#kpiEgresosPesos', t.egresos);
@@ -3627,24 +3634,46 @@ function pintarPesificado(sel, monto) {
 const COTIZ_VISTA_INICIAL = ['oficial', 'blue'];
 const cotizEnVista = () => (Array.isArray(db.ajustes.cotizVista) ? db.ajustes.cotizVista : COTIZ_VISTA_INICIAL);
 
+/* Las cripto van en dólares. Las chicas (Dogecoin, Cardano) necesitan más
+   decimales; las grandes, ninguno. */
+const FMT_USD_CHICO = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const dolaresCripto = v => (v >= 1000 ? FMT.USD.ent.format(Math.round(v)) : v >= 1 ? FMT.USD.dec.format(v) : FMT_USD_CHICO.format(v));
+function cambio24(c) {
+  if (c == null) return '';
+  const txt = `${c > 0 ? '+' : ''}${c.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`;
+  return `<span class="${c > 0 ? 'sube' : c < 0 ? 'baja' : ''}">${txt}</span>`;
+}
+
+/** Lo que se muestra de una cotización suelta: en pesos (venta) o, las cripto, en dólares. */
+function valorCotiz(c) {
+  if (c.grupo === 'cripto') { const v = Cotiz.valor(c.id, 'precio'); return v ? dolaresCripto(v) : null; }
+  const v = Cotiz.valor(c.id, 'venta');
+  return v ? pesosExactos(v) : null;
+}
+
 function pintarAccesoCotiz() {
   const elegidas = new Set(cotizEnVista());
   const filas = Cotiz.CATALOGO
     .filter(c => elegidas.has(c.id))
-    .map(c => [c, Cotiz.valor(c.id, 'venta')])
+    .map(c => [c, valorCotiz(c)])
     .filter(([, v]) => v);
   const vista = $('#cotizVista'), sub = $('#accesoCotizSub');
   vista.hidden = !filas.length;
   sub.hidden = !!filas.length;
   vista.innerHTML = filas.map(([c, v]) => `
-    <span class="cv"><span class="cv-nombre">${esc(c.corto)}</span><span class="cv-val">${pesosExactos(v)}</span></span>`).join('');
+    <span class="cv"><span class="cv-nombre">${esc(c.corto)}</span><span class="cv-val">${v}</span></span>`).join('');
 }
+
+const GRUPOS_COTIZ = [['dolar', 'Dólar'], ['moneda', 'Otras monedas'], ['cripto', 'Criptomonedas']];
 
 function pintarCotizVistaPick() {
   const elegidas = new Set(cotizEnVista());
   const cont = $('#cotizVistaPick');
-  cont.innerHTML = Cotiz.CATALOGO.map(c => `
-    <button type="button" class="catchip ${elegidas.has(c.id) ? 'is-on' : ''}" data-cotiz="${c.id}" aria-pressed="${elegidas.has(c.id)}">${esc(c.corto)}</button>`).join('');
+  cont.innerHTML = GRUPOS_COTIZ.map(([g, titulo]) => `
+    <p class="cotiz-pick-grupo">${titulo}</p>
+    <div class="catpick">${Cotiz.CATALOGO.filter(c => c.grupo === g).map(c => `
+      <button type="button" class="catchip ${elegidas.has(c.id) ? 'is-on' : ''}" data-cotiz="${c.id}" aria-pressed="${elegidas.has(c.id)}">${esc(c.corto)}</button>`).join('')}
+    </div>`).join('');
   $$('#cotizVistaPick [data-cotiz]').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.cotiz;
     const actual = cotizEnVista();
@@ -3655,38 +3684,56 @@ function pintarCotizVistaPick() {
   }));
 }
 
-function renderCotiz(error = false) {
+function renderCotiz(error = false, errorCripto = false) {
   pintarCotizVistaPick();
   const d = Cotiz.leer();
   if (!d) {
     $('#cotizLista').innerHTML = '';
     $('#cotizMonedas').innerHTML = '';
+    $('#cotizCripto').innerHTML = '';
     $('#cotizEstado').textContent = error
       ? 'No pude traer las cotizaciones. Revisá la conexión y probá de nuevo.'
       : 'Buscando las cotizaciones…';
     return;
   }
-  const val = v => (v ? pesosExactos(v) : '—');
-  const tabla = (titulo, grupo) => {
-    const filas = Cotiz.CATALOGO
-      .filter(c => c.grupo === grupo)
-      .map(c => [c, d.items.find(x => x.id === c.id)])
-      .filter(([, x]) => x);
-    if (!filas.length) return '';
-    return `<div class="cotiz-cab"><span>${titulo}</span><span>Compra</span><span>Venta</span></div>` + filas.map(([c, x]) => `
+  const filasDe = grupo => Cotiz.CATALOGO
+    .filter(c => c.grupo === grupo)
+    .map(c => [c, d.items.find(x => x.id === c.id)])
+    .filter(([, x]) => x);
+  const fila = (c, a, b) => `
       <div class="cotiz-fila">
         <span class="cotiz-tipo">
           <span class="cotiz-nombre">${esc(c.nombre)}</span>
           <span class="cotiz-que">${esc(c.que)}</span>
         </span>
-        <span class="cotiz-val">${val(x.compra)}</span>
-        <span class="cotiz-val">${val(x.venta)}</span>
-      </div>`).join('');
+        <span class="cotiz-val">${a}</span>
+        <span class="cotiz-val">${b}</span>
+      </div>`;
+  const val = v => (v ? pesosExactos(v) : '—');
+  const tabla = (titulo, grupo) => {
+    const filas = filasDe(grupo);
+    if (!filas.length) return '';
+    return `<div class="cotiz-cab"><span>${titulo}</span><span>Compra</span><span>Venta</span></div>`
+      + filas.map(([c, x]) => fila(c, val(x.compra), val(x.venta))).join('');
   };
+  const cripto = filasDe('cripto');
   $('#cotizLista').innerHTML = tabla('Dólar', 'dolar');
   $('#cotizMonedas').innerHTML = tabla('Otras monedas', 'moneda');
-  $('#cotizEstado').textContent = (error ? 'Sin conexión: muestro la última que tengo. ' : '')
-    + `Consultado ${haceCuanto(d.traido)} en ${d.fuente}.`;
+  $('#cotizCripto').innerHTML = cripto.length
+    ? `<div class="cotiz-cab"><span>Cripto, en dólares</span><span>Precio</span><span>24 h</span></div>`
+      + cripto.map(([c, x]) => fila(c, dolaresCripto(x.precio), cambio24(x.cambio) || '—')).join('')
+    : '';
+
+  /* Las dos consultas casi siempre salen juntas; si no, cada una dice lo suyo. */
+  const partes = [];
+  if (error || errorCripto) partes.push('Sin conexión: muestro lo último que tengo.');
+  if (d.traido && d.traido === d.traidoCripto) {
+    partes.push(`Consultado ${haceCuanto(d.traido)} en ${d.fuente} y CoinGecko.`);
+  } else {
+    if (d.traido) partes.push(`Dólar y monedas: ${haceCuanto(d.traido)}, en ${d.fuente}.`);
+    if (d.traidoCripto) partes.push(`Cripto: ${haceCuanto(d.traidoCripto)}, en CoinGecko.`);
+  }
+  $('#cotizEstado').textContent = partes.join(' ');
 }
 
 async function refrescarCotiz({ forzar = false } = {}) {
@@ -3695,7 +3742,7 @@ async function refrescarCotiz({ forzar = false } = {}) {
   const r = await Cotiz.actualizar({ forzar });
   b.disabled = false;
   b.textContent = 'Actualizar';
-  if (!$('#sheetCotiz').hidden) renderCotiz(r.error);
+  if (!$('#sheetCotiz').hidden) renderCotiz(r.error, r.errorCripto);
 }
 
 function abrirCotiz() {
@@ -4149,11 +4196,12 @@ function conectarFijos() {
    invisible a la semana. Tienen que servir tanto si ya cargó algo hoy
    como si no.
 
-   **Esto sólo funciona de verdad en el APK.** El navegador no puede
-   despertar una página cerrada para mostrar un aviso a una hora
-   determinada: haría falta un servidor de notificaciones push. En la
-   PWA, entonces, ni se pide el permiso: pedir algo que no vas a poder
-   cumplir es peor que no ofrecerlo.
+   **Todo esto es del APK.** El navegador no puede despertar una página
+   cerrada para mostrar un aviso a una hora determinada. En la versión
+   web los mismos avisos los manda un servidor con Web Push (push.js y
+   «Recordatorios en la versión web», más abajo). Donde ni eso se puede,
+   ni se ofrece: pedir algo que no vas a poder cumplir es peor que no
+   ofrecerlo.
    ========================================================= */
 
 const HORA_RECORDATORIO = 21;     // el aviso del día, a las 21
@@ -4177,6 +4225,10 @@ const plugNotif = () => (window.Capacitor && window.Capacitor.Plugins &&
 
 /** Los recordatorios tienen sentido sólo donde se pueden cumplir. */
 const puedeRecordar = () => !!(esNativo && plugNotif());
+/* En la versión web los manda el servidor (push.js). Ver «Recordatorios en
+   la versión web», más abajo. */
+const recordarWeb = () => !esNativo && Push.posible();
+let avisosOcupado = false;
 
 /* ---------- permiso ---------- */
 
@@ -4208,7 +4260,17 @@ async function pedirPermisoAvisos({ aMano = false } = {}) {
 
 /** Al primer arranque, una sola vez en la vida de la instalación. */
 async function iniciarAvisos() {
-  if (!puedeRecordar()) { pintarAvisosAjustes(); return; }
+  if (!puedeRecordar()) {
+    pintarAvisosAjustes();
+    /* Web: si estaban prendidos, se vuelve a mandar la suscripción (por si
+       cambió la zona horaria o el servidor la borró). Si sacaron el
+       permiso, se apagan, para que el interruptor no mienta. */
+    if (recordarWeb() && db.ajustes.avisos) {
+      const sigue = await Push.refrescar().catch(() => true);
+      if (!sigue) { db.ajustes.avisos = false; guardar(); pintarAvisosAjustes(); }
+    }
+    return;
+  }
   if (!db.ajustes.avisosPedidos) {
     await pedirPermisoAvisos();
     return;
@@ -4312,17 +4374,26 @@ function pintarAvisosAjustes() {
   const fila = $('#filaAvisos');
   if (!fila) return;
 
-  /* En el navegador no se muestra siquiera: no se puede cumplir. */
-  fila.hidden = !puedeRecordar();
-  if (!puedeRecordar()) return;
+  /* Donde no se puede cumplir, ni se muestra. */
+  fila.hidden = !puedeRecordar() && !recordarWeb();
+  if (fila.hidden) return;
 
-  $('#avisosSwitch').checked = !!db.ajustes.avisos;
+  const sw = $('#avisosSwitch');
+  if (recordarWeb() && Push.pideInstalar()) {
+    sw.checked = false;
+    sw.disabled = true;
+    $('#avisosAyuda').textContent = 'En iPhone llegan con la app instalada: en Safari tocá Compartir › Agregar a pantalla de inicio, abrila desde ahí y activalos.';
+    return;
+  }
+  sw.disabled = avisosOcupado;
+  sw.checked = !!db.ajustes.avisos;
   $('#avisosAyuda').textContent = db.ajustes.avisos
     ? `Todos los días a las ${HORA_RECORDATORIO} te recordamos cargar los gastos, y el día 1 te avisamos que está el resumen del mes.`
     : 'Activalos y te recordamos cargar los gastos del día.';
 }
 
 async function cambiarAvisos(encender) {
+  if (!esNativo) { await cambiarAvisosWeb(encender); return; }
   if (encender) {
     const ok = await pedirPermisoAvisos({ aMano: true });
     if (!ok) {
@@ -4335,6 +4406,45 @@ async function cambiarAvisos(encender) {
   db.ajustes.avisos = false;
   guardar();
   await apagarRecordatorios();
+  pintarAvisosAjustes();
+}
+
+/* ---------- Recordatorios en la versión web ----------
+   Los mismos avisos que el APK (las 21 y el día 1 a las 10), pero los
+   manda el servidor con Web Push (push.js). En iPhone, sólo con la app
+   instalada en la pantalla de inicio. */
+async function cambiarAvisosWeb(encender) {
+  if (avisosOcupado) return;
+  // En iPhone el permiso se pide apenas se toca el interruptor, antes de cualquier espera
+  const permiso = encender ? Notification.requestPermission() : null;
+  avisosOcupado = true;
+  pintarAvisosAjustes();
+  try {
+    if (encender) {
+      await Push.activar(permiso);
+      db.ajustes.avisos = true;
+      avisar(`Listo: todos los días a las ${HORA_RECORDATORIO} te recordamos cargar los gastos.`);
+    } else {
+      await Push.desactivar().catch(() => {});
+      db.ajustes.avisos = false;
+      avisar('Recordatorios apagados');
+    }
+  } catch (e) {
+    db.ajustes.avisos = false;
+    if (e && e.message === 'permiso') {
+      avisosOcupado = false;
+      pintarAvisosAjustes();
+      await soloAviso('Faltan los permisos', esIOS
+        ? 'El iPhone tiene bloqueadas las notificaciones de Mis Gastos. Se habilitan en Ajustes del iPhone › Notificaciones › Mis Gastos.'
+        : 'El navegador tiene bloqueadas las notificaciones de esta página. Se habilitan desde el candado de la barra de direcciones.');
+    } else {
+      avisar(navigator.onLine === false
+        ? 'Sin conexión: probá de nuevo con internet.'
+        : 'No se pudieron activar los recordatorios. Probá de nuevo en un rato.');
+    }
+  }
+  guardar();
+  avisosOcupado = false;
   pintarAvisosAjustes();
 }
 
@@ -4383,6 +4493,13 @@ const URL_VERSION = 'https://raw.githubusercontent.com/matumir/mis-gastos-apk/ma
 
 const HORAS_ENTRE_CHEQUEOS = 24;
 
+/* Versión web (ver «Actualizaciones de la versión web», al final). Van acá
+   arriba porque el aviso se pinta en el primer render, antes de llegar allá. */
+let swRegistro = null;
+let webNueva = null;               // { version, nota } con una versión nueva lista
+let recargarAlCambiar = false;     // la pidió la persona desde Ajustes
+const CLAVE_RECIEN = 'misgastos.actualizada';
+
 /** Compara "1.10" contra "1.9" como números, no como texto: por orden
     alfabético "1.10" sería menor que "1.9" y el aviso nunca aparecería. */
 function versionMayor(a, b) {
@@ -4430,6 +4547,19 @@ async function buscarActualizacion({ aMano = false } = {}) {
 function pintarAvisoVersion() {
   const el = $('#avisoVersion');
   if (!el) return;
+
+  /* Versión web: la nueva ya está bajada; «Actualizar» sólo recarga. */
+  if (!esNativo) {
+    el.hidden = !webNueva;
+    if (!webNueva) return;
+    $('#avisoVersionTexto').textContent = webNueva.nota
+      ? `Está la BETA ${webNueva.version}: ${webNueva.nota}`
+      : 'Hay una versión nueva de la app lista para usar.';
+    $('#avisoVersionOk').hidden = true;
+    $('#avisoVersionRecargar').hidden = false;
+    return;
+  }
+
   const v = db.ajustes.versionNueva;
   const pospuesta = db.ajustes.versionPospuesta;
   const mostrar = !!(v && v.version !== pospuesta);
@@ -4447,6 +4577,7 @@ function pintarAvisoVersion() {
 }
 
 function posponerVersion() {
+  if (!esNativo) { webNueva = null; pintarAvisoVersion(); return; }   // se aplica sola al volver a abrir
   const v = db.ajustes.versionNueva;
   if (v) { db.ajustes.versionPospuesta = v.version; guardar(); }
   pintarAvisoVersion();
@@ -4454,9 +4585,11 @@ function posponerVersion() {
 
 function conectarVersion() {
   const b = $('#btnBuscarVersion');
-  if (b) b.hidden = !URL_VERSION || !esNativo;
+  if (b) b.hidden = esNativo ? !URL_VERSION : !('serviceWorker' in navigator);
   $('#avisoVersionNo').addEventListener('click', posponerVersion);
-  $('#btnBuscarVersion').addEventListener('click', () => buscarActualizacion({ aMano: true }));
+  $('#avisoVersionRecargar').addEventListener('click', recargarActualizada);
+  $('#btnBuscarVersion').addEventListener('click', () =>
+    esNativo ? buscarActualizacion({ aMano: true }) : buscarActualizacionWeb());
 }
 
 /* =========================================================
@@ -4835,13 +4968,89 @@ if (esNativo) buscarActualizacion();
 iniciarAvisos();
 /* El resumen del mes anterior, en los primeros días del mes. */
 iniciarResumenMensual();
+/* El aviso del resumen (versión web) abre la app en ./#resumen, o le
+   avisa por mensaje si ya estaba abierta (sw.js, notificationclick). */
+const abrirResumenDelAviso = () => setTimeout(() => abrirResumenMes(mesSumar(mesDeISO(hoyISO()), -1)), 600);
+if (location.hash === '#resumen') {
+  history.replaceState(null, '', location.pathname + location.search);
+  abrirResumenDelAviso();
+}
+if ('serviceWorker' in navigator && !esNativo) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.abrir === 'resumen') abrirResumenDelAviso();
+  });
+}
 // el ancho real recién está disponible después del primer pintado
 requestAnimationFrame(() => { if (vista === 'resumen') renderMesChart(); });
 
+/* ---------- Actualizaciones de la versión web ----------
+   En el APK la versión nueva se baja e instala a mano (buscarActualizacion).
+   En la web llega sola, por el service worker (sw.js), pero alguien tiene
+   que pedir que se revise: el navegador lo hace sólo al abrir la página, y
+   en iPhone la app instalada queda suspendida y no se vuelve a abrir de
+   cero en días. Por eso se revisa al volver a la app y cada media hora.
+
+   Cuando la versión nueva ya está bajada y toma el control, si no hay nada
+   abierto la app se recarga sola (así nadie se queda en una versión vieja);
+   si hay una hoja o un diálogo abierto, avisa con «Actualizar» para no
+   perder lo que se estaba cargando. */
+function recargarActualizada() {
+  try { sessionStorage.setItem(CLAVE_RECIEN, '1'); } catch (e) {}
+  location.reload();
+}
+
+/** Número y nota de la versión publicada, para el aviso. null si no contesta. */
+async function infoVersion() {
+  try {
+    const r = await fetch(URL_VERSION + '?t=' + Date.now(), { cache: 'no-store' });
+    const v = r.ok ? await r.json() : null;
+    return v && v.version ? { version: String(v.version), nota: v.nota || '' } : null;
+  } catch (e) { return null; }
+}
+
+async function buscarActualizacionWeb() {
+  if (!swRegistro) { avisar('No pude comprobarlo ahora. Probá más tarde.'); return; }
+  try { await swRegistro.update(); }
+  catch (e) { avisar('No pude comprobarlo ahora. ¿Tenés internet?'); return; }
+  if (swRegistro.installing || swRegistro.waiting) {
+    recargarAlCambiar = true;
+    avisar('Hay una versión nueva: se está bajando y la app se va a recargar.');
+  } else {
+    avisar(`Ya tenés la última versión (BETA ${APP_VER}).`);
+  }
+}
+
 if ('serviceWorker' in navigator && !esNativo) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW:', e));
+  const habiaVersion = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js')
+    .then(reg => { swRegistro = reg; })
+    .catch(e => console.warn('SW:', e));
+
+  let ultimaRevision = Date.now();
+  const revisar = () => {
+    if (!swRegistro) return;
+    ultimaRevision = Date.now();
+    swRegistro.update().catch(() => {});
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - ultimaRevision > 60000) revisar();
   });
+  setInterval(revisar, 30 * 60000);
+
+  navigator.serviceWorker.addEventListener('controllerchange', async () => {
+    if (!habiaVersion) return;     // primera instalación: no hay versión vieja que reemplazar
+    const algoAbierto = $$('.sheet').some(s => !s.hidden) || !$('#dlg').hidden;
+    if (recargarAlCambiar || !algoAbierto) { recargarActualizada(); return; }
+    webNueva = (await infoVersion()) || { version: '', nota: '' };
+    pintarAvisoVersion();
+  });
+
+  try {
+    if (sessionStorage.getItem(CLAVE_RECIEN)) {
+      sessionStorage.removeItem(CLAVE_RECIEN);
+      setTimeout(() => avisar(`Listo: ya estás en la BETA ${APP_VER}.`), 600);
+    }
+  } catch (e) {}
 }
 
 /* ---------- versión web: instalarla ----------

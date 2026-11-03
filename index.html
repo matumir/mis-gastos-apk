@@ -65,6 +65,7 @@
       <p class="notice-text" id="avisoVersionTexto">—</p>
       <div class="btn-row">
         <a class="btn btn-primary" id="avisoVersionOk" href="#" target="_blank" rel="noopener" hidden>Descargar</a>
+        <button class="btn btn-primary" id="avisoVersionRecargar" hidden>Actualizar</button>
         <button class="btn btn-ghost" id="avisoVersionNo">Más tarde</button>
       </div>
     </div>
@@ -99,6 +100,13 @@
         <span class="pesificado pesificado-hero" id="heroPesos" hidden></span>
       </div>
       <p class="hero-note" id="heroNota"></p>
+      <div class="hero-total">
+        <span class="hero-total-label">Balance total<span class="hero-total-sub">todo lo cargado</span></span>
+        <span class="monto-fila hero-total-monto">
+          <strong id="heroTotal">$0</strong>
+          <span class="pesificado" id="heroTotalPesos" hidden></span>
+        </span>
+      </div>
     </div>
 
     <div class="kpi-row">
@@ -124,7 +132,7 @@
       <span class="acceso-ico" aria-hidden="true">💵</span>
       <span class="acceso-txt">
         <span class="acceso-name">Cotizaciones</span>
-        <span class="acceso-sub" id="accesoCotizSub">El dólar, el euro, el real y más</span>
+        <span class="acceso-sub" id="accesoCotizSub">El dólar, el euro, el real y las cripto</span>
       </span>
       <svg class="catitem-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="cotiz-vista" id="cotizVista" hidden></span>
@@ -641,7 +649,7 @@
 
     <div class="field">
       <span class="field-label">Privacidad</span>
-      <p class="field-help">Tus datos quedan sólo en este dispositivo. No hay cuentas ni servidores.</p>
+      <p class="field-help">Tus datos quedan sólo en este dispositivo. No hay cuentas, y ningún servidor recibe tus gastos.</p>
       <a class="btn btn-ghost btn-block" id="linkPrivacidad" href="privacidad.html">Ver la política de privacidad</a>
     </div>
   </div>
@@ -732,15 +740,16 @@
     <p class="field-help" id="cotizEstado" role="status">—</p>
     <div class="cotiz-lista" id="cotizLista"></div>
     <div class="cotiz-lista" id="cotizMonedas"></div>
+    <div class="cotiz-lista" id="cotizCripto"></div>
     <button class="btn btn-ghost btn-block" id="btnCotizActualizar">Actualizar</button>
 
     <div class="field cotiz-elegir">
       <span class="field-label">A la vista en el Resumen</span>
       <p class="field-help">Tocá las que quieras ver siempre, sin entrar acá.</p>
-      <div class="catpick" id="cotizVistaPick"></div>
+      <div id="cotizVistaPick"></div>
     </div>
 
-    <p class="field-help">Son valores de referencia, en pesos por cada unidad de la moneda. Las otras monedas son al cambio oficial. En la billetera en dólares, lo que ves «≈ en pesos» usa el dólar oficial de venta.</p>
+    <p class="field-help">Son valores de referencia, en pesos por cada unidad de la moneda. Las otras monedas son al cambio oficial y las criptomonedas, en dólares. En la billetera en dólares, lo que ves «≈ en pesos» usa el dólar oficial de venta.</p>
   </div>
 </section>
 
@@ -1050,6 +1059,7 @@
 <script src="sonidos.js"></script>
 <script src="resumen-mes.js"></script>
 <script src="cotizaciones.js"></script>
+<script src="push.js"></script>
 <script src="admin.js"></script>
 <script src="app.js"></script>
 </body>

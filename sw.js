@@ -1,21 +1,25 @@
 /* =========================================================
-   Service worker: deja la app funcionando sin internet.
+   Service worker de la versión web: deja la app funcionando sin
+   internet y hace que las actualizaciones lleguen enteras.
 
-   Dos decisiones que importan para que las actualizaciones lleguen:
+   1. El nombre del cache lleva la versión. Al publicar, el armado de la
+      web (scripts/preparar-web.mjs) le suma el commit a VERSION, así que
+      cada publicación cambia este archivo: el navegador lo nota, baja
+      todo de nuevo en un cache aparte y borra el viejo.
+      En el APK este archivo no se usa.
 
-   1. El nombre del cache lleva la versión. Al publicar una versión nueva
-      cambia el nombre, se precachea todo de cero y se borra lo viejo.
-      **Si cambiás algo de la app, subí VERSION.**
+   2. Todo se sirve del cache de ESTA versión, también la página. Antes
+      la página venía de la red y el resto del cache, y después de
+      publicar se mezclaban un index.html nuevo con un app.js viejo. Ahora
+      una versión entra entera o no entra.
 
-   2. Los archivos se sirven con «cache primero, pero se revalida». La
-      persona ve la app al instante desde el cache y, mientras tanto, en
-      segundo plano se baja la versión nueva para la próxima vez. Es la
-      red de contención por si alguna vez me olvido de subir VERSION:
-      la actualización igual llega, con un arranque de demora, en lugar
-      de que el usuario quede clavado en una versión vieja para siempre.
+   3. Quién avisa y recarga es la app (app.js, «Actualizaciones de la
+      versión web»): pide revisar cada vez que se vuelve a ella, porque en
+      iPhone la app instalada no se recarga sola y puede pasar días sin
+      enterarse de que hay una versión nueva.
    ========================================================= */
 
-const VERSION = "2.5-6883081";
+const VERSION = "2.6-586234d";
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium
@@ -40,6 +44,7 @@ const ARCHIVOS = [
   './sonidos.js',
   './resumen-mes.js',
   './cotizaciones.js',
+  './push.js',
   './admin.js',
   './privacidad.html',
   './manifest.webmanifest',
@@ -50,14 +55,15 @@ const ARCHIVOS = [
 ];
 
 self.addEventListener('install', ev => {
+  /* cache: 'reload' saltea el cache HTTP del navegador (GitHub Pages lo
+     deja 10 minutos): si no, justo después de publicar se podría guardar
+     como versión nueva un archivo viejo.
+     Si falla algún archivo, la instalación falla entera y sigue la
+     versión anterior; el navegador lo vuelve a intentar más tarde. */
   ev.waitUntil(
-    /* cache: 'reload' saltea el cache HTTP del navegador (GitHub Pages lo
-       deja 10 minutos): si no, justo después de publicar se podría guardar
-       como versión nueva un archivo viejo. */
     caches.open(CACHE)
       .then(c => c.addAll(ARCHIVOS.map(u => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
-      .catch(e => console.warn('No se pudo precachear todo:', e))
   );
 });
 
@@ -76,21 +82,6 @@ self.addEventListener('fetch', ev => {
      red: guardar la última es cosa de cotizaciones.js, que sabe su fecha. */
   if (new URL(req.url).origin !== self.location.origin) return;
 
-  /* Navegación: red primero, cache de respaldo. Así, con internet, el
-     index.html siempre es el último. */
-  if (req.mode === 'navigate') {
-    ev.respondWith(
-      fetch(req)
-        .then(res => {
-          const copia = res.clone();
-          caches.open(CACHE).then(c => c.put('./index.html', copia));
-          return res;
-        })
-        .catch(() => caches.match('./index.html').then(r => r || caches.match('./')))
-    );
-    return;
-  }
-
   /* Lector de tickets: cache primero y para siempre (ver CACHE_OCR). */
   if (esOcr(req.url)) {
     ev.respondWith(
@@ -102,19 +93,56 @@ self.addEventListener('fetch', ev => {
     return;
   }
 
-  /* Resto: se responde con lo que haya en el cache —instantáneo y sin
-     internet— y en paralelo se busca la versión nueva para guardarla.
-     La próxima vez que abra, ya está actualizado. */
-  ev.respondWith(
-    caches.match(req).then(hit => {
-      const red = fetch(req).then(res => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copia = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copia));
-        }
-        return res;
-      }).catch(() => hit);     // sin internet, vale lo cacheado
-      return hit || red;
-    })
-  );
+  /* La página y el resto, del cache de esta versión. ignoreSearch: la app
+     se abre también como ./?algo. Lo que no está guardado se busca en la
+     red (y se guarda, para la próxima sin internet). */
+  ev.respondWith((async () => {
+    const c = await caches.open(CACHE);
+    const hit = await c.match(req, { ignoreSearch: true });
+    if (hit) return hit;
+    try {
+      const res = await fetch(req);
+      if (res && res.status === 200 && res.type === 'basic') c.put(req, res.clone());
+      return res;
+    } catch (e) {
+      if (req.mode === 'navigate') {
+        const pagina = await c.match('./');
+        if (pagina) return pagina;
+      }
+      throw e;
+    }
+  })());
+});
+
+/* ---------- Recordatorios (versión web) ----------
+   Los manda el servidor (supabase/functions/misgastos-recordatorio) con
+   { title, body, url }. Cada push tiene que mostrar una notificación: si
+   no, iPhone deja de mandarlos. */
+self.addEventListener('push', ev => {
+  let a = {};
+  try { a = ev.data ? ev.data.json() : {}; } catch (e) { a = { body: ev.data && ev.data.text() }; }
+  ev.waitUntil(self.registration.showNotification(a.title || 'Mis Gastos', {
+    body: a.body || 'Acordate de cargar los gastos del día.',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    tag: 'misgastos-recordatorio',     // uno nuevo reemplaza al anterior sin leer
+    data: { url: a.url || './' }
+  }));
+});
+
+/* Al tocarla: si la app ya está abierta, se trae al frente; si no, se abre.
+   El del resumen (url './#resumen') abre directamente el resumen del mes. */
+self.addEventListener('notificationclick', ev => {
+  ev.notification.close();
+  const url = new URL((ev.notification.data && ev.notification.data.url) || './', self.registration.scope).href;
+  ev.waitUntil((async () => {
+    const abiertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const propia = abiertas.find(c => c.url.startsWith(self.registration.scope));
+    if (propia) {
+      await propia.focus();
+      if (url.endsWith('#resumen')) propia.postMessage({ abrir: 'resumen' });
+      return;
+    }
+    await self.clients.openWindow(url);
+  })());
 });

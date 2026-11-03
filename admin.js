@@ -85,7 +85,20 @@ let idPrueba = 900;
     mismo plugin y el mismo canal que los recordatorios de verdad, así
     que si esta llega, aquellos también. */
 async function notifPrueba(titulo, cuerpo, seg = 5) {
-  const P = plugNotif();
+  /* Versión web con los recordatorios prendidos: la prueba la manda el
+     servidor, por el mismo camino que los de verdad. Llega enseguida.
+     Va primero: en el navegador también existe el plugin de Capacitor
+     (su versión web), y no es el camino que usan los avisos de verdad. */
+  if (!esNativo && Push.posible() && db.ajustes.avisos) {
+    try {
+      if (await Push.probar(titulo, cuerpo)) return true;
+      await soloAviso('No llegó al servidor', 'Este teléfono no figura suscripto. Apagá y volvé a prender los recordatorios en Ajustes.');
+    } catch (e) {
+      await soloAviso('No se pudo mandar', '¿Está publicada la función «misgastos-recordatorio» en Supabase? (ver LEEME-APK.md)');
+    }
+    return false;
+  }
+  const P = esNativo ? plugNotif() : null;
   if (P) {
     try {
       let { display } = await P.checkPermissions();
@@ -103,8 +116,7 @@ async function notifPrueba(titulo, cuerpo, seg = 5) {
       return false;
     }
   }
-  // En el navegador: sólo para ver los textos. Los recordatorios
-  // programados de verdad existen sólo en el APK.
+  // Sin recordatorios prendidos: un aviso local, sólo para ver los textos.
   if (!('Notification' in window)) { avisar('Este navegador no muestra notificaciones.'); return false; }
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') { avisar('El navegador no dio permiso para notificaciones.'); return false; }
