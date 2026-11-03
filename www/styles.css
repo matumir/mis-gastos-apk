@@ -207,6 +207,15 @@ ul { margin: 0; padding-left: 1.1em; }
   letter-spacing: -0.035em; margin-top: 6px;
 }
 .hero-note { font-size: 0.82rem; color: var(--ink-muted); margin-top: 8px; }
+.hero-total {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 4px 12px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.hero-total-label { font-size: 0.82rem; color: var(--ink-2); font-weight: 520; display: grid; }
+.hero-total-sub { font-size: 0.72rem; color: var(--ink-muted); font-weight: 450; }
+.hero-total-monto { justify-content: flex-end; }
+.hero-total strong { font-size: 1.2rem; font-weight: 620; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
 /* KPI */
 .kpi-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -253,6 +262,13 @@ ul { margin: 0; padding-left: 1.1em; }
 .cotiz-lista:empty { display: none; }
 .cotiz-lista + .cotiz-lista { margin-top: 10px; }
 .cotiz-elegir { margin-top: 18px; }
+.cotiz-pick-grupo {
+  font-size: 0.72rem; font-weight: 600; color: var(--ink-muted);
+  letter-spacing: 0.02em; text-transform: uppercase; margin: 12px 0 7px;
+}
+/* variación de 24 h de las cripto: el color acompaña al signo, no lo reemplaza */
+.cotiz-val .sube { color: var(--good); }
+.cotiz-val .baja { color: var(--bad); }
 
 /* Las cotizaciones elegidas, dentro de la tarjeta del Resumen: debajo del
    título y a todo el ancho, así en un teléfono angosto entran de a dos. */

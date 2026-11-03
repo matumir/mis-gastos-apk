@@ -111,6 +111,43 @@ Deploy from a branch → `gh-pages` / `(root)` → Save*.
 - `scripts/preparar-web.mjs` — arma la versión web en `dist/` y le agrega a `VERSION`
   de `www/sw.js` el commit publicado, así cada publicación se detecta como nueva.
 
+### Recordatorios en la versión web (iPhone y computadora)
+
+Los mismos avisos que el APK: todos los días a las 21 y el día 1 a las 10 el del resumen,
+a la hora del teléfono. Una página no puede programarlos, así que los manda un servidor
+con **Web Push**: el **mismo proyecto de Supabase que ARAC Partidos**, con tabla y función
+propias (todo lo de Mis Gastos empieza con `misgastos`), así que no se toca nada de ARAC.
+En iPhone llegan sólo con la app instalada en la pantalla de inicio (iOS 16.4 o más nuevo);
+cada uno los prende en *Ajustes → Recordatorios*.
+
+Al servidor sólo va la «suscripción» del teléfono (una dirección anónima para mandarle
+avisos) y su zona horaria. Ningún dato de gastos. Al apagarlos se borra.
+
+**Se configura una sola vez**, en el proyecto de Supabase de ARAC:
+
+1. **SQL Editor → New query**: pegá `supabase/recordatorio.sql` entero y tocá *Run*.
+   Crea la tabla `misgastos_push`, sus funciones y el envío automático de cada hora
+   (`misgastos-recordatorio` en *Integrations → Cron*).
+2. **Edge Functions → Deploy a new function → Via Editor**: nombrala
+   `misgastos-recordatorio` (exacto), pegá `supabase/functions/misgastos-recordatorio/index.ts`
+   y tocá *Deploy*. Después, en los ajustes de la función, desactivá
+   **Verify JWT / Enforce JWT verification** y guardá.
+3. **Edge Functions → Secrets**: no hay que cargar nada nuevo. Usa los de ARAC
+   (`VAPID_PUBLICA`, `VAPID_PRIVADA` y `ARAC_CLAVE_PUSH`); fijate que estén.
+
+**Para probar:** en el iPhone, con la app instalada, prendé *Ajustes → Recordatorios* y
+aceptá el permiso. Después, desde el panel de administrador, *Recordatorio de prueba*:
+lo manda el servidor y llega en unos segundos.
+
+Para revisar desde Supabase (*SQL Editor*):
+`select endpoint, zona, ultimo_recordatorio, ultimo_resumen from misgastos_push;`
+muestra los teléfonos suscriptos y cuándo les llegó el último aviso.
+
+Archivos: `www/push.js` (prender y apagar en la app), `www/sw.js` (mostrar el aviso y
+abrir la app al tocarlo), `supabase/recordatorio.sql` y
+`supabase/functions/misgastos-recordatorio/index.ts`. Los textos de los avisos están
+repetidos en `www/app.js` (APK) y en la función: si se cambian, cambiarlos en los dos.
+
 ---
 
 ## Cómo quedó la voz
@@ -240,6 +277,25 @@ Probado en navegador con tickets generados (QR, texto inclinado, poco contraste,
 **Falta probarlo con tickets térmicos reales en un teléfono**: es lo primero a revisar.
 
 ---
+
+## Novedades de la BETA 2.6
+
+- **Balance total** en la tarjeta del balance del mes: lo que entró menos lo que salió
+  y lo que fue a ahorro, en todo lo cargado (la suma de los balances de todos los meses).
+  En la billetera en dólares, también en pesos.
+- **Criptomonedas** en Cotizaciones: Bitcoin, Ethereum, BNB, Solana, XRP, Cardano,
+  Dogecoin, TRON y Litecoin, en dólares y con la variación de 24 h, de
+  [CoinGecko](https://www.coingecko.com) (sin clave). Se pueden tener a la vista en el
+  Resumen como las demás. Si CoinGecko no contesta, el dólar se actualiza igual.
+- **Versión web (iPhone y computadora):** se actualiza sola. Revisa si hay versión nueva
+  al volver a la app y cada media hora (en iPhone la app instalada no se recarga sola).
+  Cuando está bajada, se recarga sola si no hay nada abierto; si hay algo a medio cargar,
+  muestra *Hay una versión nueva · Actualizar*. *Ajustes → Buscar actualizaciones* ahora
+  también está en la web. El service worker sirve todo del cache de la versión
+  instalada: ya no se mezcla una página nueva con código viejo.
+- **Recordatorios en iPhone y en la computadora:** los mismos del APK, mandados por el
+  servidor con Web Push desde el proyecto de Supabase de ARAC. Ver *Recordatorios en la
+  versión web*, arriba, para configurarlo.
 
 ## Novedades de la BETA 2.5
 
