@@ -117,8 +117,11 @@ Los mismos avisos que el APK: todos los días a las 21 y el día 1 a las 10 el d
 a la hora del teléfono. Una página no puede programarlos, así que los manda un servidor
 con **Web Push**: el **mismo proyecto de Supabase que ARAC Partidos**, con tabla y función
 propias (todo lo de Mis Gastos empieza con `misgastos`), así que no se toca nada de ARAC.
-En iPhone llegan sólo con la app instalada en la pantalla de inicio (iOS 16.4 o más nuevo);
-cada uno los prende en *Ajustes → Recordatorios*.
+En iPhone llegan sólo con la app instalada en la pantalla de inicio (iOS 16.4 o más nuevo).
+La primera vez que se abre, la app pregunta *¿Te recordamos cargar los gastos?*: un toque en
+**Activar recordatorios** muestra el permiso del sistema y quedan prendidos. No puede mostrar
+el permiso sola al abrirse, como el APK: en iPhone una página sólo puede pedirlo cuando se
+toca un botón. Se pregunta una sola vez; después quedan en *Ajustes → Recordatorios*.
 
 Al servidor sólo va la «suscripción» del teléfono (una dirección anónima para mandarle
 avisos) y su zona horaria. Ningún dato de gastos. Al apagarlos se borra.
