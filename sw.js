@@ -19,7 +19,7 @@
       enterarse de que hay una versión nueva.
    ========================================================= */
 
-const VERSION = "2.6-586234d";
+const VERSION = "2.6-ca41f4c";
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium

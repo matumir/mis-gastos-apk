@@ -767,7 +767,10 @@ function preguntar({ titulo, texto, acciones }) {
       b.className = `btn ${estilo}`;
       b.type = 'button';
       b.textContent = a.texto;
-      b.addEventListener('click', () => cerrarDlg(a.clave));
+      /* `alTocar` corre en el mismo toque, antes de cerrar: hay cosas que el
+         navegador sólo permite ahí (pedir el permiso de notificaciones en
+         iPhone), y no después de esperar la respuesta del diálogo. */
+      b.addEventListener('click', () => { if (a.alTocar) a.alTocar(); cerrarDlg(a.clave); });
       cont.appendChild(b);
       if (a.nota) {
         const n = document.createElement('p');
@@ -4269,6 +4272,7 @@ async function iniciarAvisos() {
       const sigue = await Push.refrescar().catch(() => true);
       if (!sigue) { db.ajustes.avisos = false; guardar(); pintarAvisosAjustes(); }
     }
+    if (recordarWeb() && !Push.pideInstalar() && !db.ajustes.avisos && !db.ajustes.avisosPedidos) ofrecerAvisosWeb();
     return;
   }
   if (!db.ajustes.avisosPedidos) {
@@ -4413,10 +4417,45 @@ async function cambiarAvisos(encender) {
    Los mismos avisos que el APK (las 21 y el día 1 a las 10), pero los
    manda el servidor con Web Push (push.js). En iPhone, sólo con la app
    instalada en la pantalla de inicio. */
-async function cambiarAvisosWeb(encender) {
+/* La primera vez que se abre (como el APK, que pregunta al primer arranque).
+   En iPhone una página no puede mostrar el permiso del sistema por su
+   cuenta: sólo cuando se toca un botón. Por eso primero se pregunta acá, y
+   el toque en «Activar recordatorios» es el que pide el permiso. Se
+   pregunta una sola vez; después queda el interruptor de Ajustes. */
+function ofrecerAvisosWeb() {
+  let intentos = 0;
+  const probar = async () => {
+    const ocupado = $('.sheet:not([hidden])') || !$('#dlg').hidden;
+    if (ocupado && intentos++ < 40) { setTimeout(probar, 1500); return; }
+    if (ocupado || db.ajustes.avisos || db.ajustes.avisosPedidos) return;
+    if (Notification.permission === 'denied') {       // ya lo negó en el sistema: no tiene sentido
+      db.ajustes.avisosPedidos = true; guardar(); return;
+    }
+    let permiso = null;
+    const r = await preguntar({
+      titulo: '¿Te recordamos cargar los gastos?',
+      texto: [
+        `Todos los días a las ${HORA_RECORDATORIO} un aviso para que no se te escape ningún gasto, y el día 1 cuando está listo tu resumen del mes.`,
+        'Lo cambiás cuando quieras en Ajustes.'
+      ],
+      acciones: [
+        { clave: 'si', texto: 'Activar recordatorios', estilo: 'primario',
+          alTocar: () => { permiso = Notification.requestPermission(); } },
+        { clave: null, texto: 'Ahora no' }
+      ]
+    });
+    db.ajustes.avisosPedidos = true;
+    guardar();
+    if (r === 'si') await cambiarAvisosWeb(true, permiso);
+    else pintarAvisosAjustes();
+  };
+  setTimeout(probar, 1500);
+}
+
+async function cambiarAvisosWeb(encender, permiso = encender ? Notification.requestPermission() : null) {
+  // En iPhone el permiso se pide apenas se toca el botón, antes de cualquier espera:
+  // por eso se pide en los parámetros, en el mismo instante del toque
   if (avisosOcupado) return;
-  // En iPhone el permiso se pide apenas se toca el interruptor, antes de cualquier espera
-  const permiso = encender ? Notification.requestPermission() : null;
   avisosOcupado = true;
   pintarAvisosAjustes();
   try {
@@ -5071,7 +5110,7 @@ if (!esNativo) {
     const fila = $('#filaInstalar'), caja = $('#instalarAyuda');
     if (instalada()) { fila.hidden = true; return; }
     if (esIOS) {
-      caja.innerHTML = `<p class="field-help">En Safari tocá ${COMPARTIR_IOS} <b>Compartir</b> y después <b>Agregar a pantalla de inicio</b>. Queda con su ícono, abre sin internet y Safari no borra tus datos.</p>`;
+      caja.innerHTML = `<p class="field-help">En Safari tocá ${COMPARTIR_IOS} <b>Compartir</b> y después <b>Agregar a pantalla de inicio</b>. Queda con su ícono, abre sin internet, te puede recordar cargar los gastos y Safari no borra tus datos.</p>`;
     } else if (pedidoInstalar) {
       caja.innerHTML = '<p class="field-help">Queda con su ícono y abre sin internet.</p><button class="btn btn-ghost btn-block" id="btnInstalar">Instalar en este dispositivo</button>';
       $('#btnInstalar').addEventListener('click', async () => {
