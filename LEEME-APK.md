@@ -281,6 +281,39 @@ Probado en navegador con tickets generados (QR, texto inclinado, poco contraste,
 
 ---
 
+## Novedades de la BETA 2.7
+
+Dos formas nuevas de cargar sin escribir (Premium). Todo pasa en el teléfono: nada se
+envía a ningún lado.
+
+- **Comprobantes de transferencias.** En Mercado Pago, Ualá o el banco: *Compartir
+  comprobante → Mis Gastos*. La app lo lee (imagen, PDF o texto) y abre el movimiento
+  listo para confirmar: importe, fecha, si entró o salió la plata y a quién. En el
+  escáner también se puede elegir la captura del comprobante (así funciona en iPhone).
+  Recuerda la categoría y la descripción que le pusiste a cada persona.
+- **Detectar pagos y transferencias (sólo Android).** Con el permiso de *Acceso a
+  notificaciones*, la app lee los avisos con importe de 28 billeteras y bancos (lista en
+  `www/detectar.js`, `APPS`). Las transferencias y pagos aparecen en el Resumen
+  (*Detectamos N movimientos*) para cargarlos con un toque o todos juntos; se descartan
+  solas las promociones, los pagos rechazados y los vencimientos. Avisa si uno parece
+  repetido. Se ofrece una vez al abrir la app con Premium y se prende o apaga en Ajustes.
+
+**El permiso en Android 13 o más nuevo.** Como el APK no viene de Play Store, Android
+marca *Acceso a notificaciones* como **ajuste restringido** (el interruptor aparece gris).
+La app lo explica, pero el camino es: *Ajustes del teléfono → Apps → Mis Gastos → ⋮
+(arriba a la derecha) → Permitir ajustes restringidos*, y después activar el acceso.
+
+**Qué falta probar en un teléfono:** los textos reales de los avisos de cada billetera y
+comprobantes reales. Los textos de los avisos los decide cada app y no hay una lista
+pública: el lector busca el verbo (*transferiste*, *te envió*, *compra aprobada*…) y el
+importe, no una frase exacta. Si una billetera avisa con otras palabras, se agregan en
+`FRASES` de `www/detectar.js`. Para probar sin esperar un aviso: *Administrador →
+Simular avisos de billetera*.
+
+Código: `android/.../LectorAvisos.java` (el servicio que lee los avisos), `ColaAvisos.java`
+(los guarda hasta que la app los levanta), `LectorPlugin.java` (permiso y compartir) y
+`www/detectar.js` (interpreta los textos; se prueba sin teléfono).
+
 ## Novedades de la BETA 2.6
 
 - **Balance total** en la tarjeta del balance del mes: lo que entró menos lo que salió

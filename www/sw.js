@@ -19,7 +19,7 @@
       enterarse de que hay una versión nueva.
    ========================================================= */
 
-const VERSION = '2.6';
+const VERSION = '2.7';
 const CACHE = `misgastos-${VERSION}`;
 
 /* El lector de tickets pesa ~10 MB. No se precachea (quien no es Premium
@@ -40,6 +40,7 @@ const ARCHIVOS = [
   './share.js',
   './local-notifications.js',
   './licencia.js',
+  './detectar.js',
   './ticket.js',
   './sonidos.js',
   './resumen-mes.js',

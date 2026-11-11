@@ -22,7 +22,32 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- «Compartir → Mis Gastos»: el comprobante de una transferencia
+                 (imagen, PDF o texto) que se comparte desde la billetera o el
+                 banco. Lo recibe LectorPlugin y lo lee el escáner de la app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
         </activity>
+
+        <!-- Lee los avisos de las billeteras para detectar transferencias y
+             pagos (Premium). No hace nada hasta que la persona lo activa en
+             Ajustes y le da el «Acceso a notificaciones» en el sistema; el
+             permiso BIND_… asegura que sólo el sistema puede conectarse. -->
+        <service
+            android:name=".LectorAvisos"
+            android:label="@string/app_name"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <provider
             android:name="androidx.core.content.FileProvider"

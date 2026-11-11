@@ -83,6 +83,14 @@
       </div>
     </div>
 
+    <div class="notice" id="avisoDetectados" hidden>
+      <p class="notice-title" id="avisoDetectadosTitulo">—</p>
+      <p class="notice-text" id="avisoDetectadosTexto">—</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="avisoDetectadosOk">Revisar</button>
+      </div>
+    </div>
+
     <div class="monthbar" role="group" aria-label="Mes a mostrar">
       <button class="icon-btn" id="mesPrev" aria-label="Mes anterior">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -613,6 +621,15 @@
       <p class="field-help" id="avisosAyuda">—</p>
     </div>
 
+    <div class="field" id="filaDetectar" hidden>
+      <label class="check-row">
+        <input type="checkbox" id="detectarSwitch">
+        <span class="field-label">Detectar pagos y transferencias</span>
+      </label>
+      <span class="sello-pro" id="detectarSello" hidden>Premium</span>
+      <p class="field-help" id="detectarAyuda">—</p>
+    </div>
+
     <div class="field" id="filaInstalar" hidden>
       <span class="field-label">Instalar la app</span>
       <div id="instalarAyuda"></div>
@@ -894,6 +911,7 @@
         <li>El ticket <strong>entero</strong>, derecho y con buena luz.</li>
         <li>Si tiene el <strong>código QR</strong> de la factura, que se vea nítido: es la lectura más precisa.</li>
         <li>Antes de guardar vas a poder revisar y corregir todo.</li>
+        <li>También lee <strong>comprobantes de transferencias</strong>: elegí la captura o la foto del comprobante.</li>
       </ul>
       <div class="sheet-actions">
         <button class="btn btn-primary btn-grow" id="btnTicketFoto">Sacar foto</button>
@@ -960,6 +978,7 @@
         <button class="btn btn-ghost" data-admin="copia">Aviso de copia</button>
         <button class="btn btn-ghost" data-admin="fijos">Correr fijos ahora</button>
         <button class="btn btn-ghost" data-admin="sonidos">Probar sonidos</button>
+        <button class="btn btn-ghost" data-admin="detectados">Simular avisos de billetera</button>
       </div>
     </div>
 
@@ -972,6 +991,26 @@
     </div>
 
     <button class="btn btn-danger-ghost btn-block" data-admin="salir">Salir del modo administrador</button>
+  </div>
+</section>
+
+<!-- ===================== HOJA: DETECTADOS ===================== -->
+<div class="sheet-backdrop" id="sheetDetBack" hidden></div>
+<section class="sheet" id="sheetDet" hidden aria-modal="true" role="dialog" aria-labelledby="sheetDetTitle">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="sheet-head">
+    <h2 id="sheetDetTitle">Detectados en tus billeteras</h2>
+    <button class="icon-btn" id="sheetDetClose" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <p class="field-help">Salen de los avisos de tus billeteras y bancos. No se carga nada hasta que lo confirmes.</p>
+    <div class="det-lista" id="detLista"></div>
+    <div class="sheet-actions" id="detAcciones">
+      <button class="btn btn-primary btn-grow" id="btnDetTodos">Cargar todos</button>
+      <button class="btn btn-ghost btn-grow" id="btnDetDescartar">Descartar todos</button>
+    </div>
   </div>
 </section>
 
@@ -994,6 +1033,8 @@
     <ul class="pro-lista">
       <li><strong>Movimientos fijos</strong>: el alquiler, el sueldo y las cuotas se cargan solos todos los meses</li>
       <li><strong>Escanear tickets</strong>: le sacás una foto y se carga el gasto, leyendo el QR de la factura o el texto</li>
+      <li><strong>Comprobantes de transferencias</strong>: compartilos desde tu billetera a Mis Gastos (o elegí la captura) y se cargan solos</li>
+      <li><strong>Detectar pagos y transferencias</strong> que te avisan Mercado Pago, Ualá, tu banco y otras billeteras (Android)</li>
       <li><strong>Billetera en dólares</strong>, separada de la de pesos, con sus propios movimientos, fijos y ahorros</li>
       <li><strong>Presupuestos por categoría</strong>, con aviso cuando te pasás</li>
       <li><strong>Comparar con meses anteriores</strong> y ver en qué se te fue la plata</li>
@@ -1055,6 +1096,7 @@
 <script src="share.js"></script>
 <script src="local-notifications.js"></script>
 <script src="licencia.js"></script>
+<script src="detectar.js"></script>
 <script src="ticket.js"></script>
 <script src="sonidos.js"></script>
 <script src="resumen-mes.js"></script>

@@ -1,5 +1,5 @@
 {
-  "version": "2.6",
+  "version": "2.7",
   "apk": "https://github.com/matumir/mis-gastos-apk/releases/latest/download/mis-gastos.apk",
-  "nota": "Recordatorios también en iPhone, balance total de todo lo cargado, cotizaciones de Bitcoin, Ethereum y otras cripto, y la versión web se actualiza sola."
+  "nota": "Con Premium: compartí el comprobante de una transferencia a Mis Gastos y se carga solo, y en Android la app detecta los pagos y transferencias que te avisan Mercado Pago, Ualá y tu banco, listos para cargar con un toque."
 }

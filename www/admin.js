@@ -223,6 +223,22 @@ async function adminAccion(que) {
       avisar(n ? `Se cargaron ${n} movimiento${n === 1 ? '' : 's'} fijo${n === 1 ? '' : 's'}` : 'No había fijos pendientes');
       break;
     }
+    case 'detectados': {
+      /* Como si las billeteras hubieran avisado: pasa por el mismo lector
+         que los avisos de verdad, promoción incluida (se descarta). */
+      const ahora = Date.now();
+      const n = sumarAvisos([
+        { id: 's' + ahora + 'a', paquete: 'com.mercadopago.wallet', titulo: 'Transferencia enviada', texto: 'Le transferiste $ 3.500 a Juan Pérez', cuando: ahora },
+        { id: 's' + ahora + 'b', paquete: 'ar.com.bancar.uala', titulo: 'Recibiste dinero', texto: 'María Gómez te envió $ 12.000', cuando: ahora - 3600000 },
+        { id: 's' + ahora + 'c', paquete: 'com.mosync.app_Banco_Galicia', titulo: 'Compra aprobada', texto: 'Compra aprobada por $ 18.750,00 en CARREFOUR con tu tarjeta terminada en 1234', cuando: ahora - 7200000 },
+        { id: 's' + ahora + 'd', paquete: 'com.mercadopago.wallet', titulo: '¡Aprovechá!', texto: 'Ahorrá hasta $ 5.000 pagando con QR esta semana', cuando: ahora }
+      ]);
+      cerrarHoja('sheetAdmin'); cerrarHoja('sheetSet');
+      irA('resumen');
+      pintarAvisoDetectados();
+      avisar(`Se simularon 4 avisos: ${n} son movimientos (la promoción se descarta)`);
+      break;
+    }
     case 'sonidos': {
       const lista = Sonido.nombres;
       lista.forEach((nombre, k) => setTimeout(() => { Sonido.tocar(nombre); avisar(`Sonido: ${nombre}`); }, k * 700));
