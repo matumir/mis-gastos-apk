@@ -203,6 +203,7 @@
     filtros            : ['per', 'neg'],   // buscar y filtrar en todo el historial
     escaner            : ['per', 'neg'],   // leer tickets con la cámara (QR + OCR local)
     divisas            : ['per', 'neg'],   // billetera en dólares, separada de la de pesos
+    detectar           : ['per', 'neg'],   // leer los avisos de las billeteras (sólo Android)
     exportarPlanilla   : ['neg'],          // Excel/PDF: queda para el sistema de negocios
     cuentaCorriente    : ['neg'],
     multiusuario       : ['neg']

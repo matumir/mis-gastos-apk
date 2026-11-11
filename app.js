@@ -5,7 +5,7 @@
 'use strict';
 
 const CLAVE = 'misgastos.v1';
-const APP_VER = '2.6';
+const APP_VER = '2.7';
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS  = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
@@ -500,7 +500,7 @@ async function procesarTicket(archivo) {
   ticketOcupado = false;
   cerrarHoja('sheetTicket');
   Sonido.tocar('escaneo');
-  abrirMov(null, prefillDeTicket(r));
+  abrirMov(null, r.origen === 'comprobante' ? prefillDeComprobante(r) : prefillDeTicket(r));
 }
 
 function prefillDeTicket(r) {
@@ -551,6 +551,498 @@ function prefillDeTicket(r) {
     fecha: r.fecha || hoyISO(),
     ticket: { echo: partes.join(' '), revisar, clave }
   };
+}
+
+/* ---------------------------------------------------------
+   Comprobantes y avisos de billeteras (Premium)
+
+   Dos caminos, con el mismo destino que el escáner de tickets: la hoja
+   de movimiento prellenada, para confirmar. Nunca se guarda nada solo.
+
+   · Comprobante: la imagen o el PDF de una transferencia, compartido
+     desde la billetera («Compartir → Mis Gastos», en el APK) o elegido
+     de la galería en el escáner. Lo lee ticket.js y lo interpreta
+     Detectar.deComprobante.
+   · Avisos: en el APK, con el permiso de «Acceso a notificaciones», el
+     servicio nativo (LectorAvisos.java) guarda los avisos con importe de
+     las billeteras y bancos. La app los levanta al abrirse, los
+     interpreta (Detectar.deAviso) y los deja en «Detectados» para que
+     la persona los revise.
+
+   Todo pasa en el teléfono: nada se envía a ningún lado.
+   --------------------------------------------------------- */
+const CLAVE_DETECTADOS = 'misgastos.detectados';
+const MAX_DETECTADOS = 100;
+
+/** El plugin propio del APK (LectorPlugin.java), o null. */
+let lectorCache;
+function plugLector() {
+  if (lectorCache !== undefined) return lectorCache;
+  lectorCache = null;
+  try {
+    const C = window.Capacitor;
+    if (C && C.isNativePlatform && C.isNativePlatform() && C.isPluginAvailable && C.isPluginAvailable('Lector')) {
+      lectorCache = C.registerPlugin('Lector');
+    }
+  } catch (e) { lectorCache = null; }
+  return lectorCache;
+}
+
+const plataEn = (n, cod) => {
+  const v = Number(n) || 0;
+  return (Number.isInteger(v) ? FMT[cod].ent : FMT[cod].dec).format(v);
+};
+
+/** La categoría más probable para un texto, entre las del tipo dado. */
+function sugerirCategoria(texto, tipo, cats = db.categorias) {
+  const lista = cats.filter(c => c.tipo === tipo);
+  const t = ' ' + normalizar(texto) + ' ';
+  let mejor = null, largo = 0;
+  for (const c of lista) {
+    for (const cand of [normalizar(c.nombre), ...(c.claves || []).map(normalizar)]) {
+      if (!cand || cand.length < 3) continue;
+      if (t.includes(' ' + cand + ' ') && cand.length > largo) { largo = cand.length; mejor = c.id; }
+    }
+  }
+  if (mejor) return mejor;
+  const otros = lista.find(c => /^otros/.test(normalizar(c.nombre)));
+  return (otros || lista[lista.length - 1] || {}).id || null;
+}
+
+/* La segunda transferencia a la misma persona ya sabe en qué categoría la
+   pusiste y cómo la llamaste (se guarda junto con los comercios del
+   escáner, en recordarComercio). */
+const claveContraparte = (tipo, nombre) => (nombre ? `per:${tipo}:${normalizar(nombre)}` : '');
+function recordadoPara(clave, tipo, cats = db.categorias) {
+  const previo = clave ? comerciosRecordados()[clave] : null;
+  return previo && cats.some(c => c.id === previo.categoriaId && c.tipo === tipo) ? previo : null;
+}
+
+/** Va a la billetera de la moneda detectada. Devuelve qué decir, o ''. */
+function aBilleteraDe(m) {
+  if (!m || m === moneda()) return '';
+  if (m === 'USD' && !db.billeteras.USD && !puede('divisas')) return '';
+  return usarBilletera(m) ? `Va a la billetera en ${MONEDAS[m].nombre}.` : '';
+}
+
+/** Un comprobante o un texto compartido → datos para la hoja de movimiento. */
+function prefillDeComprobante(r, como = 'comprobante') {
+  const cambio = aBilleteraDe(r.moneda);
+  const partes = [como === 'texto' ? 'Leído del texto que compartiste.' : 'Leído del comprobante.'];
+  let revisar = false;
+  if (r.moneda && r.moneda !== moneda()) {
+    partes.push(`El importe está en ${MONEDAS[r.moneda].nombre} y estás en la billetera en ${MONEDAS[moneda()].nombre}: revisalo.`);
+    revisar = true;
+  } else if (cambio) partes.push(cambio);
+  partes.push(r.tipo === 'ingreso' ? 'Lo tomé como plata que entró.' : 'Lo tomé como plata que salió.');
+  if (!r.fecha) partes.push('No encontré la fecha: quedó la de hoy.');
+
+  const clave = claveContraparte(r.tipo, r.contraparte);
+  const previo = recordadoPara(clave, r.tipo);
+  return {
+    tipo: r.tipo,
+    monto: r.monto,
+    categoriaId: previo ? previo.categoriaId : sugerirCategoria(`${r.descripcion} ${r.texto || ''}`, r.tipo),
+    descripcion: previo && previo.descripcion ? previo.descripcion : r.descripcion,
+    fecha: r.fecha || hoyISO(),
+    ticket: { echo: partes.join(' '), revisar, clave: clave || '-' }
+  };
+}
+
+/* ---------- lo que llega compartido desde otra app (APK) ---------- */
+
+function base64ABlob(b64, mime) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime || 'image/jpeg' });
+}
+
+const ERRORES_COMPARTIDO = {
+  grande: 'Ese archivo es muy grande para leerlo. Compartí una captura del comprobante.',
+  protegido: 'Ese PDF tiene contraseña. Compartí una captura del comprobante.',
+  formato: 'No puedo leer ese tipo de archivo. Compartí una imagen o un PDF del comprobante.',
+  vacio: 'No llegó nada para leer.'
+};
+
+async function tomarCompartido() {
+  const L = plugLector();
+  if (!L) return;
+  let r;
+  try { r = await L.tomarCompartido(); } catch (e) { return; }
+  if (!r || r.tipo === 'nada') return;
+  if (r.tipo === 'error') { avisar(ERRORES_COMPARTIDO[r.motivo] || 'No pude abrir lo que compartiste.'); return; }
+  if (!puede('escaner')) { abrirPremium('compartir'); return; }
+  if (ticketOcupado) { avisar('Esperá a que termine de leer el anterior.'); return; }
+
+  // Se cierra lo que hubiera abierto: lo compartido manda.
+  $$('.sheet:not([hidden])').forEach(h => cerrarHoja(h.id));
+  if (dlgResolver) cerrarDlg(null);
+
+  if (r.tipo === 'texto') {
+    const d = Detectar.deTexto(r.texto);
+    if (!d) { avisar('No encontré un movimiento con importe en ese texto.'); return; }
+    Sonido.tocar('escaneo');
+    abrirMov(null, prefillDeComprobante(d, 'texto'));
+    return;
+  }
+  if (r.tipo === 'imagen' && r.datos) {
+    abrirHoja('sheetTicket');
+    procesarTicket(base64ABlob(r.datos, r.mime));
+  }
+}
+
+/* ---------- movimientos detectados en los avisos ---------- */
+
+function leerDetectados() {
+  try {
+    const l = JSON.parse(localStorage.getItem(CLAVE_DETECTADOS));
+    return Array.isArray(l) ? l : [];
+  } catch (e) { return []; }
+}
+function guardarDetectados(l) {
+  try { localStorage.setItem(CLAVE_DETECTADOS, JSON.stringify(l.slice(-MAX_DETECTADOS))); } catch (e) { /* nada */ }
+}
+
+/**
+ * Avisos crudos ({ id, paquete, titulo, texto, cuando }) → movimientos para
+ * revisar. Los que no son movimientos (promociones, pagos rechazados…) se
+ * descartan acá. Devuelve cuántos se sumaron.
+ */
+function sumarAvisos(items) {
+  const lista = leerDetectados();
+  let n = 0;
+  for (const it of items || []) {
+    const r = Detectar.deAviso({ paquete: it.paquete, titulo: it.titulo, texto: it.texto });
+    if (!r) continue;
+    const id = 'a' + it.id;
+    if (lista.some(x => x.id === id)) continue;
+    const cuando = Math.min(Number(it.cuando) || Date.now(), Date.now());
+    lista.push({
+      id, tipo: r.tipo, monto: r.monto, moneda: r.moneda, descripcion: r.descripcion,
+      contraparte: r.contraparte, app: r.app, texto: r.texto, fecha: hoyISO(new Date(cuando)), cuando
+    });
+    n++;
+  }
+  if (n) guardarDetectados(lista);
+  return n;
+}
+
+/** ¿Ya hay uno igual cargado (mismo tipo, monto y día)? Pasa si se cargó a mano o por voz. */
+function yaCargado(d) {
+  const b = db.billeteras[d.moneda];
+  return !!b && b.movimientos.some(m => m.tipo === d.tipo && Math.abs(m.monto - d.monto) < 0.01 && m.fecha === d.fecha);
+}
+
+let trayendoAvisos = false;
+async function traerAvisos() {
+  const L = plugLector();
+  if (!L || trayendoAvisos || !puede('detectar')) return;
+  trayendoAvisos = true;
+  try {
+    const { items = [] } = await L.pendientes();
+    if (!items.length) return;
+    const n = sumarAvisos(items);
+    await L.borrar({ hasta: Math.max(...items.map(x => Number(x.id) || 0)) });
+    if (n) {
+      pintarAvisoDetectados();
+      if (!$('#sheetDet').hidden) renderDetectados();
+    }
+  } catch (e) {
+    console.warn('No pude leer los avisos detectados:', e);
+  } finally {
+    trayendoAvisos = false;
+  }
+}
+
+function pintarAvisoDetectados() {
+  const el = $('#avisoDetectados');
+  if (!el) return;
+  const n = leerDetectados().length;
+  el.hidden = !n || !puede('detectar');
+  if (el.hidden) return;
+  $('#avisoDetectadosTitulo').textContent = n === 1
+    ? 'Detectamos un movimiento en tus billeteras' : `Detectamos ${n} movimientos en tus billeteras`;
+  $('#avisoDetectadosTexto').textContent = 'Salen de los avisos de tus billeteras y bancos. Revisalos y cargalos con un toque.';
+}
+
+function renderDetectados() {
+  const lista = leerDetectados().slice().sort((a, b) => b.cuando - a.cuando);
+  $('#detAcciones').hidden = !lista.length;
+  if (!lista.length) {
+    $('#detLista').innerHTML = vacio('✅', 'No hay nada para revisar', 'Cuando una billetera avise de una transferencia o un pago, va a aparecer acá.');
+    return;
+  }
+  $('#detLista').innerHTML = lista.map(d => {
+    const entra = d.tipo === 'ingreso';
+    const ya = yaCargado(d);
+    return `<div class="det-item">
+      <div class="det-fila">
+        <span class="mov-emoji flecha">${entra ? '↓' : '↑'}</span>
+        <span class="mov-mid">
+          <span class="mov-name">${esc(d.descripcion)}</span>
+          <span class="mov-sub">${esc(d.app || 'Billetera')} · ${esc(fechaLegible(d.fecha))}</span>
+        </span>
+        <span class="mov-amt ${entra ? 'is-in' : 'is-out'}">${entra ? '+' : '−'}${plataEn(d.monto, d.moneda)}</span>
+      </div>
+      ${ya ? '<p class="det-ya">Ya hay uno igual cargado ese día. Si es el mismo, descartalo.</p>' : ''}
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-det-cargar="${esc(d.id)}">Revisar y cargar</button>
+        <button class="btn btn-ghost" data-det-borrar="${esc(d.id)}">Descartar</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function abrirDetectados() {
+  renderDetectados();
+  abrirHoja('sheetDet');
+}
+
+function quitarDetectado(id) {
+  guardarDetectados(leerDetectados().filter(x => x.id !== id));
+  pintarAvisoDetectados();
+}
+
+/** Abre la hoja de movimiento con lo detectado, para confirmar. */
+function cargarDetectado(id) {
+  const d = leerDetectados().find(x => x.id === id);
+  if (!d) return;
+  cerrarHoja('sheetDet');
+  const cambio = aBilleteraDe(d.moneda);
+  const partes = [`Detectado en un aviso de ${d.app || 'tu billetera'}: «${d.texto}»`];
+  let revisar = false;
+  if (d.moneda !== moneda()) {
+    partes.push(`El importe está en ${MONEDAS[d.moneda].nombre}: revisalo.`);
+    revisar = true;
+  } else if (cambio) partes.push(cambio);
+  const clave = claveContraparte(d.tipo, d.contraparte);
+  const previo = recordadoPara(clave, d.tipo);
+  abrirMov(null, {
+    tipo: d.tipo,
+    monto: d.monto,
+    categoriaId: previo ? previo.categoriaId : sugerirCategoria(`${d.descripcion} ${d.texto}`, d.tipo),
+    descripcion: previo && previo.descripcion ? previo.descripcion : d.descripcion,
+    fecha: d.fecha,
+    ticket: { echo: partes.join(' '), revisar, clave: clave || '-' }
+  });
+  $('#sheetMov').dataset.detectado = id;
+}
+
+/** Carga de una todos los que no parecen repetidos, cada uno en la billetera de su moneda. */
+async function cargarTodosDetectados() {
+  const lista = leerDetectados();
+  const cargar = lista.filter(d => !yaCargado(d) && (db.billeteras[d.moneda] || (d.moneda === 'USD' && puede('divisas'))));
+  if (!cargar.length) { avisar('Los que quedan parecen repetidos: revisalos uno por uno.'); return; }
+  const n = cargar.length;
+  if (!await confirmar(`Cargar ${n} movimiento${n === 1 ? '' : 's'}`,
+    'Se cargan con la categoría que mejor les cuadra. Después los podés editar desde Movimientos.', 'Cargar')) return;
+
+  for (const d of cargar) {
+    if (!db.billeteras[d.moneda]) crearBilleteraUSD();
+    const b = db.billeteras[d.moneda];
+    const clave = claveContraparte(d.tipo, d.contraparte);
+    const previo = recordadoPara(clave, d.tipo, b.categorias);
+    b.movimientos.push({
+      id: uid(), tipo: d.tipo, monto: d.monto,
+      categoriaId: previo ? previo.categoriaId : sugerirCategoria(`${d.descripcion} ${d.texto}`, d.tipo, b.categorias),
+      cajaId: null, sentido: null,
+      descripcion: previo && previo.descripcion ? previo.descripcion : d.descripcion,
+      fecha: d.fecha, creado: new Date().toISOString(), porVoz: false, textoVoz: '', detectado: d.app || true
+    });
+  }
+  guardar();
+  const ids = new Set(cargar.map(d => d.id));
+  guardarDetectados(lista.filter(d => !ids.has(d.id)));
+  Sonido.tocar('exito');
+  cerrarHoja('sheetDet');
+  pintarAvisoDetectados();
+  renderTodo();
+  const quedan = lista.length - n;
+  avisar(`Se cargaron ${n} movimiento${n === 1 ? '' : 's'}` + (quedan ? `. Quedan ${quedan} para revisar.` : ''));
+}
+
+async function descartarTodosDetectados() {
+  if (!await confirmar('Descartar todos', 'No se carga ninguno. Los avisos nuevos van a seguir apareciendo.', 'Descartar', true)) return;
+  guardarDetectados([]);
+  cerrarHoja('sheetDet');
+  pintarAvisoDetectados();
+  avisar('Descartados');
+}
+
+/* ---------- el permiso y el interruptor de Ajustes ---------- */
+
+const versionAndroid = () => {
+  const m = navigator.userAgent.match(/Android (\d+)/);
+  return m ? Number(m[1]) : 0;
+};
+let esperandoPermisoLector = false;
+let lectorPermitido = false;
+
+/** Lo que vale en la práctica: lo pidió, tiene Premium y Android le dio el permiso. */
+const detectarEncendido = () => !!db.ajustes.detectar && puede('detectar') && lectorPermitido;
+
+async function sincronizarLector() {
+  const L = plugLector();
+  if (!L) return;
+  try {
+    lectorPermitido = !!(await L.estado()).permitido;
+    await L.activar({ activo: detectarEncendido(), paquetes: Object.keys(Detectar.APPS) });
+  } catch (e) { console.warn('Lector:', e); }
+  pintarDetectarAjustes();
+  pintarAvisoDetectados();
+}
+
+function pintarDetectarAjustes() {
+  const fila = $('#filaDetectar');
+  if (!fila) return;
+  fila.hidden = !plugLector();
+  if (fila.hidden) return;
+  const pro = puede('detectar');
+  $('#detectarSello').hidden = pro;
+  $('#detectarSwitch').checked = detectarEncendido();
+  $('#detectarAyuda').textContent = !pro
+    ? 'Con Premium, las transferencias y pagos que te avisan Mercado Pago, Ualá, Naranja X, tu banco y otras billeteras aparecen listos para cargar.'
+    : detectarEncendido()
+      ? 'Las transferencias y pagos que te avisan tus billeteras y bancos aparecen en el Resumen para revisarlos y cargarlos. Sólo se leen los avisos de esas apps, y nada sale del teléfono.'
+      : db.ajustes.detectar && !lectorPermitido
+        ? 'Falta el permiso de «Acceso a notificaciones». Tocá el interruptor para darlo.'
+        : 'Activalo y las transferencias y pagos que te avisan tus billeteras y bancos aparecen listos para cargar.';
+}
+
+/** Explica, y manda a la pantalla del sistema donde se da el permiso (Android no deja pedirlo con un cartel). */
+async function pedirPermisoLector() {
+  const L = plugLector();
+  if (!L) return;
+  const texto = [
+    'Android te va a mostrar «Acceso a notificaciones». Activá Mis Gastos y volvé a la app.',
+    'Sólo se leen los avisos de billeteras y bancos (Mercado Pago, Ualá, Naranja X, Brubank, MODO, Cuenta DNI y otros) que traen un importe. Los de WhatsApp, el correo o cualquier otra app ni se miran, y nada sale del teléfono.'
+  ];
+  if (versionAndroid() >= 13) {
+    texto.push('Si Android dice «Ajuste restringido»: tocá «Abrir datos de la app», después ⋮ (arriba a la derecha) › «Permitir ajustes restringidos», y volvé a intentar.');
+  }
+  const r = await preguntar({
+    titulo: 'Permiso para leer los avisos',
+    texto,
+    acciones: [
+      { clave: 'ir', texto: 'Dar el permiso', estilo: 'primario' },
+      ...(versionAndroid() >= 13 ? [{ clave: 'info', texto: 'Abrir datos de la app' }] : []),
+      { clave: null, texto: 'Ahora no' }
+    ]
+  });
+  if (r !== 'ir' && r !== 'info') { pintarDetectarAjustes(); return; }
+  db.ajustes.detectar = true;
+  guardar();
+  esperandoPermisoLector = r;
+  try { await (r === 'info' ? L.abrirInfoApp() : L.pedirPermiso()); }
+  catch (e) { esperandoPermisoLector = false; avisar('No pude abrir los ajustes del teléfono.'); }
+}
+
+/** Al volver de los ajustes del sistema. */
+async function volvioDeAjustes() {
+  if (!esperandoPermisoLector) { traerAvisos(); return; }
+  const desde = esperandoPermisoLector;
+  esperandoPermisoLector = false;
+  await sincronizarLector();
+  if (lectorPermitido) {
+    avisar('Listo: las transferencias y pagos de tus billeteras van a aparecer en el Resumen');
+    traerAvisos();
+    return;
+  }
+  if (desde === 'info') { pedirPermisoLector(); return; }   // habilitó los ajustes restringidos: ahora el permiso
+  const r = await preguntar({
+    titulo: 'Todavía no está el permiso',
+    texto: versionAndroid() >= 13
+      ? ['Si el interruptor de Mis Gastos aparecía gris o decía «Ajuste restringido», primero hay que habilitarlo: «Abrir datos de la app» › ⋮ (arriba a la derecha) › «Permitir ajustes restringidos».', 'Después volvé a «Dar el permiso».']
+      : ['En «Acceso a notificaciones», activá Mis Gastos y volvé a la app.'],
+    acciones: [
+      { clave: 'ir', texto: 'Dar el permiso', estilo: 'primario' },
+      ...(versionAndroid() >= 13 ? [{ clave: 'info', texto: 'Abrir datos de la app' }] : []),
+      { clave: null, texto: 'Ahora no' }
+    ]
+  });
+  if (r === 'ir' || r === 'info') {
+    esperandoPermisoLector = r;
+    const L = plugLector();
+    try { await (r === 'info' ? L.abrirInfoApp() : L.pedirPermiso()); } catch (e) { esperandoPermisoLector = false; }
+  } else pintarDetectarAjustes();
+}
+
+async function cambiarDetectar(encender) {
+  if (encender && !puede('detectar')) {
+    $('#detectarSwitch').checked = false;
+    abrirPremium('detectar');
+    return;
+  }
+  if (!encender) {
+    db.ajustes.detectar = false;
+    guardar();
+    await sincronizarLector();
+    avisar('Detección de movimientos desactivada');
+    return;
+  }
+  if (lectorPermitido) {
+    db.ajustes.detectar = true;
+    guardar();
+    await sincronizarLector();
+    avisar('Listo: las transferencias y pagos de tus billeteras van a aparecer en el Resumen');
+    return;
+  }
+  $('#detectarSwitch').checked = false;
+  await pedirPermisoLector();
+}
+
+/** Una sola vez, a quien tiene Premium en el APK: como los recordatorios, se ofrece en vez de esperar que lo encuentre en Ajustes. */
+let detectarOfrecidoAhora = false;
+function ofrecerDetectar() {
+  if (detectarOfrecidoAhora || !plugLector() || !puede('detectar') || db.ajustes.detectar || db.ajustes.detectarOfrecido) return;
+  detectarOfrecidoAhora = true;
+  let intentos = 0;
+  const probar = async () => {
+    const ocupado = $('.sheet:not([hidden])') || !$('#dlg').hidden;
+    if (ocupado && intentos++ < 40) { setTimeout(probar, 1500); return; }
+    if (ocupado || db.ajustes.detectar || db.ajustes.detectarOfrecido || !puede('detectar')) return;
+    db.ajustes.detectarOfrecido = true;
+    guardar();
+    if (lectorPermitido) return;
+    const r = await preguntar({
+      titulo: '¿Cargamos solos tus pagos y transferencias?',
+      texto: ['Cuando Mercado Pago, Ualá, tu banco u otra billetera te avise de una transferencia o un pago, aparece en el Resumen listo para cargar con un toque.',
+        'Para eso Android te va a pedir que Mis Gastos pueda leer esos avisos. Lo cambiás cuando quieras en Ajustes.'],
+      acciones: [{ clave: 'si', texto: 'Activar', estilo: 'primario' }, { clave: null, texto: 'Ahora no' }]
+    });
+    if (r === 'si') pedirPermisoLector();
+  };
+  setTimeout(probar, 2500);
+}
+
+async function iniciarLector() {
+  const L = plugLector();
+  pintarDetectarAjustes();
+  pintarAvisoDetectados();
+  if (!L) return;
+  try {
+    await L.addListener('nuevo', () => traerAvisos());
+    await L.addListener('vuelta', () => volvioDeAjustes());
+    await L.addListener('compartido', () => tomarCompartido());
+  } catch (e) { console.warn('Lector:', e); }
+  tomarCompartido();
+  await sincronizarLector();
+  traerAvisos();
+}
+
+function conectarDetectados() {
+  $('#detectarSwitch').addEventListener('change', e => cambiarDetectar(e.target.checked));
+  $('#avisoDetectadosOk').addEventListener('click', abrirDetectados);
+  $('#sheetDetClose').addEventListener('click', () => cerrarHoja('sheetDet'));
+  $('#sheetDetBack').addEventListener('click', () => cerrarHoja('sheetDet'));
+  $('#btnDetTodos').addEventListener('click', cargarTodosDetectados);
+  $('#btnDetDescartar').addEventListener('click', descartarTodosDetectados);
+  $('#detLista').addEventListener('click', e => {
+    const c = e.target.closest('[data-det-cargar]'), b = e.target.closest('[data-det-borrar]');
+    if (c) cargarDetectado(c.dataset.detCargar);
+    if (b) { quitarDetectado(b.dataset.detBorrar); renderDetectados(); Sonido.tocar('borrar'); }
+  });
 }
 
 /* ---------------------------------------------------------
@@ -851,6 +1343,7 @@ function renderResumen() {
   pintarAvisoCopia();
   pintarAvisoFijos();
   pintarAvisoPresu();
+  pintarAvisoDetectados();
   $('#mesLabel').textContent = mesLegible(mesSel);
   $('#mesLabel2').textContent = mesLegible(mesSel);
 
@@ -1519,6 +2012,7 @@ function abrirMov(id = null, prefill = null) {
   $('#sheetMov').dataset.ticket = !id && prefill && prefill.ticket ? prefill.ticket.clave || '-' : '';
   $('#fFecha').max = hoyISO();   // se fija en cada apertura por si cambió el día
   $('#sheetMov').dataset.voz = prefill && prefill.textoVoz ? prefill.textoVoz : '';
+  $('#sheetMov').dataset.detectado = '';   // lo pone cargarDetectado, después de abrir
   abrirHoja('sheetMov');
   if (!id && (!prefill || prefill.monto == null)) setTimeout(() => $('#fMonto').focus(), 240);
 }
@@ -1582,6 +2076,9 @@ function guardarMov() {
   const claveTicket = $('#sheetMov').dataset.ticket;
   if (claveTicket && claveTicket !== '-' && !esAhorro) recordarComercio(claveTicket, borradorCatId, campos.descripcion);
   $('#sheetMov').dataset.ticket = '';
+  const detectado = $('#sheetMov').dataset.detectado;
+  if (detectado && !editandoMov) quitarDetectado(detectado);
+  $('#sheetMov').dataset.detectado = '';
   mesSel = mesDeISO(fecha);
   grupoActivo = null;
   cerrarHoja('sheetMov');
@@ -2994,7 +3491,7 @@ function conectar() {
   // teclado
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetCotiz', 'sheetFiltros', 'sheetAdmin'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
+    ['sheetMov', 'sheetVoz', 'sheetCat', 'sheetCaja', 'sheetSet', 'sheetCopia', 'sheetLic', 'sheetPro', 'sheetFijos', 'sheetFijo', 'sheetComp', 'sheetCotiz', 'sheetFiltros', 'sheetAdmin', 'sheetDet'].forEach(id => { if (!$(`#${id}`).hidden) cerrarHoja(id); });
     if (!$('#sheetTicket').hidden) cerrarTicket();
   });
 
@@ -4720,6 +5217,8 @@ function aplicarPlan() {
   pintarMoneda();
   pintarPlan();
   renderTodo();
+  // detectar avisos depende del plan: se prende o se apaga del lado nativo
+  if (plugLector()) sincronizarLector().then(ofrecerDetectar);
 }
 
 /* ---------------------------------------------------------
@@ -4852,7 +5351,9 @@ const MOTIVOS = {
   metas:      () => 'Ponele una meta a cada caja de ahorro y mirá cuánto te falta y en cuántos meses llegás.',
   comparar:   () => 'Mirá en qué se te fue la plata este mes comparado con los anteriores, categoría por categoría.',
   filtros:    () => 'Buscá en todo tu historial, no sólo en el mes que estás viendo: por categoría, por monto o por período.',
-  escaner:    () => 'Sacale una foto al ticket y el gasto se carga solo: lee el QR de la factura o, si no tiene, el texto. Todo en tu teléfono.',
+  escaner:    () => 'Sacale una foto al ticket y el gasto se carga solo: lee el QR de la factura o, si no tiene, el texto. También lee comprobantes de transferencias. Todo en tu teléfono.',
+  compartir:  () => 'Compartí el comprobante de una transferencia desde tu billetera a Mis Gastos y se carga solo, listo para confirmar. Todo en tu teléfono.',
+  detectar:   () => 'Las transferencias y pagos que te avisan Mercado Pago, Ualá, Naranja X, tu banco y otras billeteras aparecen solos, listos para cargar con un toque.',
   divisas:    () => 'Llevá tus dólares en una billetera aparte, con sus propios ingresos, egresos, fijos y cajas de ahorro, sin mezclarlos con los pesos.'
 };
 
@@ -4993,6 +5494,7 @@ conectarAvisos();
 conectarResumenMes();
 conectarAdmin();
 conectarSonidosAjustes();
+conectarDetectados();
 irA('resumen');
 /* La verificación es asíncrona (Web Crypto). La app arranca en modo libre y
    se corrige en cuanto termina, unos milisegundos después. */
@@ -5005,6 +5507,8 @@ Admin.iniciar().then(() => { aplicarPlan(); pintarAdmin(); });
 if (esNativo) buscarActualizacion();
 /* Los recordatorios: en el APK se piden al primer arranque. */
 iniciarAvisos();
+/* Lo compartido desde otra app y los avisos detectados de las billeteras (APK). */
+iniciarLector();
 /* El resumen del mes anterior, en los primeros días del mes. */
 iniciarResumenMensual();
 /* El aviso del resumen (versión web) abre la app en ./#resumen, o le

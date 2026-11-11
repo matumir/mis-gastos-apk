@@ -1726,3 +1726,14 @@ a.btn { text-decoration: none; }
   .rm-pie #rmSiguiente { min-width: 96px; padding-left: 14px; padding-right: 14px; }
   .rm-pie #rmAnterior { width: 42px; }
 }
+
+/* ---------------- detectados en las billeteras ---------------- */
+.det-lista { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin: 12px 0 4px; }
+.det-item {
+  background: var(--surface-1); border: 1px solid var(--hairline);
+  border-radius: var(--radius-card); padding: 12px 13px; box-shadow: var(--shadow);
+}
+.det-fila { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; min-width: 0; }
+.det-fila .mov-name { display: block; }
+.det-item .btn-row .btn { padding: 9px 10px; font-size: 0.84rem; }
+.det-ya { font-size: 0.76rem; color: var(--warn, var(--gold-text)); line-height: 1.4; margin: -4px 0 10px; }

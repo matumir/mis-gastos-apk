@@ -447,16 +447,18 @@
     return worker;
   }
 
-  async function leerTexto(archivo, progreso, filtro) {
+  async function leerTexto(archivo, progreso, filtro, lado = 2000) {
     const w = await obtenerWorker(progreso);
-    const c = filtro(await imagenACanvas(archivo, 2000));
+    const c = filtro(await imagenACanvas(archivo, lado));
     const { data } = await w.recognize(c);
     return data && data.text ? data.text : '';
   }
 
   /**
    * Escanea una foto de ticket. Devuelve { origen:'qr'|'ocr', monto, fecha,
-   * comercio, cuit, ... } o lanza si la imagen no se pudo procesar.
+   * comercio, cuit, ... } o lanza si la imagen no se pudo procesar. Si la
+   * imagen es el comprobante de una transferencia devuelve lo que arma
+   * Detectar.deComprobante ({ origen:'comprobante', tipo, monto, ... }).
    * `progreso(etapa, fraccion)` informa: 'qr' | 'preparando' | 'leyendo'.
    */
   async function escanear(archivo, progreso = () => {}, hoy = new Date()) {
@@ -471,6 +473,22 @@
     const puntaje = x => (x.monto != null ? (x.confianza === 'alta' ? 4 : x.confianza === 'media' ? 3 : 1) : 0)
       + (x.fecha ? 1 : 0) + (x.comercio ? 0.5 : 0);
     let texto = await leerTexto(archivo, progreso, realzar);
+    // ¿Es el comprobante de una transferencia y no un ticket de compra?
+    // Lo interpreta detectar.js: no tiene TOTAL ni productos, tiene un
+    // importe, un «De», un «Para» y un CVU o CBU.
+    const D = global.Detectar;
+    let comprobante = D ? D.deComprobante(texto, hoy) : null;
+    /* En una captura de la billetera el importe va en letra enorme, y el
+       lector se confunde con las letras muy grandes («$ 15.000» sale «5.»).
+       Si parece un comprobante y falta algo, se lee otra vez en chico y se
+       juntan las dos lecturas. */
+    if (D && D.pareceComprobante(texto) && (!comprobante || !comprobante.contraparte || !comprobante.fecha)) {
+      progreso('otra', 0);
+      const chico = await leerTexto(archivo, (e, f) => progreso(e === 'leyendo' ? 'otra' : e, f), realzar, 1000);
+      const junto = D.deComprobante(chico + '\n' + texto, hoy);
+      if (junto) comprobante = junto;
+    }
+    if (comprobante) return comprobante;
     let r = interpretarTexto(texto, hoy);
     r.texto = texto;
     if (r.confianza !== 'alta') {   // incluye 'dudosa'
